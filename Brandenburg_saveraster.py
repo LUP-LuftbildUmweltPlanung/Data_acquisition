@@ -13,6 +13,7 @@ import numpy as np
 import time
 from shapely.geometry import Polygon, box
 from shapely.wkt import loads
+import download_by_shape_functions as func
 
 
 def get_input_EPSG(shapefile_path):
@@ -129,15 +130,6 @@ def get_acquisition_date(file_path, file_type):
     return acquisition_date
 
 
-def create_directory(path, name):
-    """Create a directory if it doesn't exist yet"""
-    directory_path = os.path.join(path, name)
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-
-    return directory_path
-
-
 def download_files(raster_files_list, base_url, dir_path):
     """Receives a list with names of zip-files and extracts and unpacks them from the server"""
     for file_name in tqdm(raster_files_list):
@@ -173,7 +165,7 @@ def create_zip_list(raster_files_zip, geom, file_type, x_start, x_end, y_start, 
 
             #Skip extracting image file if the part does not intersect with the polygon
             coord_x_min, coord_x_max, coord_y_min, coord_y_max = decode_coordinates(x, x+1, y, y+1)
-            check_intersect = polygon_partition_intersect(geom, coord_x_min, coord_x_max, coord_y_min, coord_y_max)
+            check_intersect = func.polygon_partition_intersect(geom, coord_x_min, coord_x_max, coord_y_min, coord_y_max)
 
             if check_intersect == False:
                 print("Partition does not intersect and is not added to download list.")
@@ -184,17 +176,6 @@ def create_zip_list(raster_files_zip, geom, file_type, x_start, x_end, y_start, 
 
     return raster_files_zip
 
-
-def polygon_partition_intersect(geom, x_min,x_max,y_min,y_max):
-    """Returns True/False if the given quadratic partition intersects with the current polygon"""
-
-    quadratic_bbox = box(x_min,y_min,x_max,y_max)
-    # Convert OGR Geometry to a Shapely Polygon (for easier spatial operations)
-    polygon_shapely = loads(geom.ExportToWkt())
-
-    # Check if the bounding box of the quadratic form intersects with the polygon
-    intersection_exists = polygon_shapely.intersects(quadratic_bbox)
-    return intersection_exists
 
 
 def write_meta_raster(file_path, acquisition_date):
@@ -294,7 +275,7 @@ def process_file(shapefile_path):
     shapefile_dir = os.path.dirname(shapefile_path)
     file_name = filename.split(".")[0]
 
-    dir_path_mosaic = create_directory(shapefile_dir, "dir_mosaic")
+    dir_path_mosaic = func.create_directory(shapefile_dir, "dir_mosaic")
 
     driver = ogr.GetDriverByName('ESRI Shapefile')
     dataSource = driver.Open(shapefile_path, 0)  # 0 means read-only.
@@ -317,7 +298,7 @@ def process_file(shapefile_path):
 
         for file_type in ["dop", "bdom", "dgm"]:
 
-            dir_path = create_directory(shapefile_dir, "dir_" + file_type)
+            dir_path = func.create_directory(shapefile_dir, "dir_" + file_type)
 
             if file_type == "dop":
                 base_url = base_url_dop

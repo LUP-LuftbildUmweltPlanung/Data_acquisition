@@ -16,31 +16,8 @@ import math
 from shapely.geometry import Polygon, box
 from shapely.wkt import loads
 from tqdm import tqdm
-
-
-def get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta):
-    """Get acquisition date from the feature info"""
-
-    centroid_x = int((x_max - x_min) / 2)
-    centroid_y = int((y_max - y_min) / 2)
-
-    # Perform the GetFeatureInfo request
-    info = wms_meta.getfeatureinfo(
-        layers=[layer_meta],
-        srs=epsg_code,
-        bbox=(x_min, y_min, x_max, y_max),
-        size=(int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)),
-        format='image/tiff',
-        query_layers=[layer_meta],
-        info_format='text/plain',  # Change based on what formats the server supports
-        xy=(centroid_x, centroid_y)
-    )
-    info_output = info.read()
-
-    bildflug_date = info_output.split(b"\nbildflug = ")[1][:10]
-    bildflug_date = int(bildflug_date.replace(b"-", b""))
-
-    return bildflug_date
+from PIL import Image
+import download_by_shape_functions as func
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
@@ -109,10 +86,7 @@ def calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max):
 
     return max(x_p_factor, y_p_factor)
 
-
 def merge_raster_bands(img1, img2, output_file_path):
-    """If multiple layers are extracted as separate raster files, they are merged into one raster file here."""
-
     img1_path = 'temp_img1.tif'
     img2_path = 'temp_img2.tif'
 
@@ -125,7 +99,7 @@ def merge_raster_bands(img1, img2, output_file_path):
     img2_ds = gdal.Open(img2_path)
 
     # Create a new 4-band GeoTIFF
-    driver = gdal.GetDriverByName('GTiff')
+    driver = gdal.GetDriverByName('GTIFF')
     output_ds = driver.Create(output_file_path, img1_ds.RasterXSize, img1_ds.RasterYSize, 4, gdal.GDT_Byte)
     output_ds.SetGeoTransform(img1_ds.GetGeoTransform())
     output_ds.SetProjection(img1_ds.GetProjection())
@@ -150,12 +124,15 @@ def merge_raster_bands(img1, img2, output_file_path):
 
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path):
     """Get image data for a specified frame and write it into tif file"""
+
+    #print(output_file_path)
+    #print(x_min, x_max, y_min, y_max)
     img = wms.getmap(
         layers=[layer],
         srs=epsg_code,
         bbox=(x_min, y_min, x_max, y_max),
         size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-        format='image/tiff')
+        format=img_format)
 
     if layer2 != None:
         img2 = wms.getmap(
@@ -163,13 +140,56 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             srs=epsg_code,
             bbox=(x_min, y_min, x_max, y_max),
             size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-            format='image/tiff')
+            format=img_format)
         merge_raster_bands(img, img2, output_file_path)
 
     else:
-        out = open(output_file_path, 'wb')
-        out.write(img.read())
-        out.close()
+
+        if state == "BB_history":
+            png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)
+        else:
+            out = open(output_file_path, 'wb')
+            out.write(img.read())
+            out.close()
+
+
+def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
+    """writes the data from a png file into a raster file with rgb bands using the spatial data from the given shape file"""
+    img2 = Image.open(img)
+    img2.save(output_file_path.split(".")[0] + ".tif", "TIFF")
+
+    ds = ogr.Open(file_path)
+    shplayer = ds.GetLayer()
+    spatial_ref = shplayer.GetSpatialRef()
+    extent = shplayer.GetExtent()
+
+    tif_ds = gdal.Open(output_file_path.split(".")[0] + ".tif", gdal.GA_Update)
+
+    if tif_ds:
+        # Create spatial reference object for the TIFF
+        tif_srs = osr.SpatialReference()
+        tif_srs.ImportFromWkt(spatial_ref.ExportToWkt())
+
+        # Set the projection
+        tif_ds.SetProjection(tif_srs.ExportToWkt())
+
+        # Calculate pixel size
+        pixel_width = (x_max - x_min) / tif_ds.RasterXSize
+        pixel_height = (y_max - y_min) / tif_ds.RasterYSize
+
+        # print(pixel_height, pixel_width)
+
+        # Set geotransformation
+        # [top left x, pixel width, 0, top left y, 0, pixel height (negative because origin is top left corner)]
+        # geo_transform = [extent[0], pixel_width, 0, extent[3], 0, -pixel_height]
+        geo_transform = [x_min, pixel_width, 0, y_max, 0, -pixel_height]
+        tif_ds.SetGeoTransform(geo_transform)
+
+        # Close the dataset to flush changes
+        tif_ds = None
+    else:
+        print("Failed to open the TIFF file.")
+
 
 
 def merge_files(output_wms_path, output_folder_path, shapefile_name, file_type):
@@ -197,48 +217,34 @@ def merge_files(output_wms_path, output_folder_path, shapefile_name, file_type):
         os.remove(possible_ovr_output_file)
 
     g = gdal.Warp(os.path.join(output_wms_path, shapefile_name + "_merged.tif"), tif_files,
-                  format="GTiff",
+                  format="GTIFF",
                   options=["COMPRESS=LZW", "TILED=YES"],dstNodata=nodata_value)  # if you want
     g = None  # Close file and flush to disk
-
-
-def create_directory(path, name):
-    """Create a directory if it doesn't exist yet"""
-    directory_path = os.path.join(path, name)
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-
-    return directory_path
-
 
 def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, shapefile_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """Call several functions to get raster data for dop and meta files"""
 
-    # dop
+    #dop
     if wms_calc == True and wms != None:
         output_file_path = os.path.join(output_wms_dop_path, shapefile_name)
         extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
 
-    # meta
+    #meta
     if meta_calc == True and wms_meta != None:
-        bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
+        #bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
+
+        bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
+                                                                  'r_aufl': r_aufl,
+                                                                  'layer_meta': layer_meta,
+                                                                  'epsg_code': epsg_code,
+                                                                  'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max,
+                                                                  'format': img_format,
+                                                                  'info_format': meta_info_format,
+                                                                  'acq_date_find_str': b"Bildflugdatum</td><td class=\'td\'>"})
+
         bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
         out_meta = os.path.join(output_wms_meta_path, shapefile_name.split(".")[0] + "_meta.tif")
         write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
-
-
-def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
-    """Returns True/False if the given quadratic partition intersects with the current polygon"""
-
-    quadratic_bbox = box(x_min,y_min,x_max,y_max)
-    # Convert OGR Geometry to a Shapely Polygon (for easier spatial operations)
-    # You might need to install the shapely and pyproj libraries for these operations
-    polygon_shapely = loads(geom.ExportToWkt())
-
-    # Check if the bounding box of the quadratic form intersects with the polygon
-    intersection_exists = polygon_shapely.intersects(quadratic_bbox)
-
-    return intersection_exists
 
 
 def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
@@ -246,6 +252,7 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
 
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max)
+
 
     """wms request """
     wms = None
@@ -259,22 +266,19 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
         wms_meta = WebMapService(wms_ad_meta)
         list(wms_meta.contents)
 
-
-
     """Calculation"""
     if reduce_p_factor > 1:
-        #print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
+        print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
 
         """Create dop and meta directories:"""
         output_wms_dop_path = output_wms_path
         output_wms_meta_path = output_wms_path
 
         if wms_calc == True:
-            output_wms_dop_path = create_directory(output_wms_path, "dop")
+            output_wms_dop_path = func.create_directory(output_wms_path, "dop")
 
         if meta_calc == True:
-            output_wms_meta_path = create_directory(output_wms_path, "meta")
-
+            output_wms_meta_path = func.create_directory(output_wms_path, "meta")
 
         rangex = (x_max - x_min) / reduce_p_factor
         rangey = (y_max - y_min) / reduce_p_factor
@@ -293,7 +297,7 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
                 y_min_n = y_min + ((reduce_p_factor - 1) - x) * rangey
 
                 "Skip extracting image file if the part does not intersect with the polygon"
-                check_intersect = polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
+                check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
 
                 if check_intersect == False:
                     polygon_part_progress.update(1)
@@ -330,7 +334,7 @@ def process_file(shapefile_path):
 
 
     """Create output directory"""
-    output_wms_path = create_directory(shapefile_dir, "output_wms")
+    output_wms_path = func.create_directory(shapefile_dir, "output_wms")
 
 
     """Get polygon extends and ESPG code from shape file"""
@@ -374,25 +378,46 @@ starttime = time.time()
 
 # Specify the directory path
 #directory_path = r"W:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download"
-directory_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung"
-#directory_path = r"C:\Vera\test_skript2"
+directory_path = r"C:\Vera\test_skript"
 
 r_aufl = 0.2
 
 """Variables for image data:"""
-wms_ad = 'https://sg.geodatenzentrum.de/wms_dop__e7bcdaa6-a1db-f6cc-7b70-85492cfa13d6?request=GetCapabilities&service=WMS&'
+#wms_ad = 'https://sg.geodatenzentrum.de/wms_dop__e7bcdaa6-a1db-f6cc-7b70-85492cfa13d6?request=GetCapabilities&service=WMS&'
+
+
+wms_ad = "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+
+
 #layer = 'cir'
-layer = 'rgb'
-layer2 = 'ir'
-#layer2 = None
+#layer = 'rgb'
+layer = 'dop20_bebb_2019_2021_farbe'
+#layer2 = 'ir'
+layer2 = None
 
 """Variables for meta data:"""
-wms_ad_meta = 'http://sg.geodatenzentrum.de/wms_info?'
-layer_meta = 'dop'
+wms_ad_meta = 'https://isk.geobasis-bb.de/ows/aktualitaeten_wms?'
+#layer_meta = 'bb_dop-16-18_info'
+
+#wms_ad_meta = "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?request=GetCapabilities&service=WMS"
+layer_meta = 'bb_dop-19-21_info'
 
 
-meta_calc = True #Boolean
-wms_calc = False #Boolean
+meta_calc = True
+wms_calc = True
+
+state = "BB_history"
+
+
+
+if state == "BB_history":
+    img_format="image/png"
+    meta_info_format="text/html"
+    #layer2 = None
+else:
+    img_format = "image/tiff"
+    meta_info_format = "text/plain"
+
 
 #process bar for number of files:
 count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
