@@ -109,7 +109,10 @@ def calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max):
 
     return max(x_p_factor, y_p_factor)
 
+
 def merge_raster_bands(img1, img2, output_file_path):
+    """If multiple layers are extracted as separate raster files, they are merged into one raster file here."""
+
     img1_path = 'temp_img1.tif'
     img2_path = 'temp_img2.tif'
 
@@ -211,15 +214,18 @@ def create_directory(path, name):
 def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, shapefile_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """Call several functions to get raster data for dop and meta files"""
 
-    #dop
-    output_file_path = os.path.join(output_wms_dop_path, shapefile_name)
-    extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
+    # dop
+    if wms_calc == True and wms != None:
+        output_file_path = os.path.join(output_wms_dop_path, shapefile_name)
+        extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
 
-    #meta
-    bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
-    bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
-    out_meta = os.path.join(output_wms_meta_path, shapefile_name.split(".")[0] + "_meta.tif")
-    write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+    # meta
+    if meta_calc == True and wms_meta != None:
+        bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
+        bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
+        out_meta = os.path.join(output_wms_meta_path, shapefile_name.split(".")[0] + "_meta.tif")
+        write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+
 
 def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
     """Returns True/False if the given quadratic partition intersects with the current polygon"""
@@ -241,21 +247,33 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max)
 
-
     """wms request """
-    wms = WebMapService(wms_ad)
-    list(wms.contents)
+    wms = None
+    wms_meta = None
 
-    wms_meta = WebMapService(wms_ad_meta)
-    list(wms_meta.contents)
+    if wms_calc == True:
+        wms = WebMapService(wms_ad)
+        list(wms.contents)
+
+    if meta_calc == True:
+        wms_meta = WebMapService(wms_ad_meta)
+        list(wms_meta.contents)
+
+
 
     """Calculation"""
     if reduce_p_factor > 1:
         #print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
 
         """Create dop and meta directories:"""
-        output_wms_meta_path = create_directory(output_wms_path, "meta")
-        output_wms_dop_path = create_directory(output_wms_path, "dop")
+        output_wms_dop_path = output_wms_path
+        output_wms_meta_path = output_wms_path
+
+        if wms_calc == True:
+            output_wms_dop_path = create_directory(output_wms_path, "dop")
+
+        if meta_calc == True:
+            output_wms_meta_path = create_directory(output_wms_path, "meta")
 
 
         rangex = (x_max - x_min) / reduce_p_factor
@@ -290,8 +308,11 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
                 #print("Finished part " + str(part) + " from " + str(reduce_p_factor ** 2))
                 polygon_part_progress.update(1)
 
-        merge_files(output_wms_path, output_wms_dop_path, shapefile_name.split(".")[0], "dop")
-        merge_files(output_wms_path, output_wms_meta_path, shapefile_name.split(".")[0], "meta")
+        if wms_calc == True:
+            merge_files(output_wms_path, output_wms_dop_path, shapefile_name.split(".")[0], "dop")
+
+        if meta_calc == True:
+            merge_files(output_wms_path, output_wms_meta_path, shapefile_name.split(".")[0], "meta")
 
     else:
         #print("Extracting raster data from wms ...")
@@ -368,6 +389,10 @@ layer2 = 'ir'
 """Variables for meta data:"""
 wms_ad_meta = 'http://sg.geodatenzentrum.de/wms_info?'
 layer_meta = 'dop'
+
+
+meta_calc = True
+wms_calc = True
 
 #process bar for number of files:
 count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
