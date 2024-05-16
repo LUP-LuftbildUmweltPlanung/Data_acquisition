@@ -369,8 +369,19 @@ def process_file(shapefile_path):
         #shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(polygon)
 
         if state == "BB_history":
+            if polygon == 0:
+                polygon_code = 60
+            elif polygon == 1:
+                polygon_code = 65
+            elif polygon == 2:
+                polygon_code = 75
+            elif polygon == 3:
+                polygon_code = 82
+            elif polygon == 4:
+                polygon_code = 83
+
             years = "hist-" + layer_meta.split("_")[1].split("-",1)[1]  # sth like "dop-19-21"
-            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon) + "_" + years
+            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon_code) + "_" + years
         else:
             output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon)
 
