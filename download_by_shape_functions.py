@@ -62,6 +62,8 @@ def get_acquisition_date(input_dict):
         )
     info_output = info.read()
 
+    print(info_output.split(input_dict['acq_date_find_str']))
+
     bildflug_date = info_output.split(input_dict['acq_date_find_str'])[1][:10]
 
     bildflug_date = bildflug_date.replace(b"-", b".")

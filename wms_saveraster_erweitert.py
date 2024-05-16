@@ -286,6 +286,13 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
 
             for y in list(range(reduce_p_factor)):
 
+                curr_file = os.path.join(output_wms_meta_path, shapefile_name.split(".")[0] + "_" + str(part) + "_meta.tif")
+                print(curr_file)
+                if os.path.isfile(curr_file) and part < 6884:
+                    part = part + 1
+                    polygon_part_progress.update(1)
+                    continue
+
                 x_min_n = x_min + rangex * y
                 y_max_n = y_max - rangey * x
 
@@ -355,6 +362,10 @@ def process_file(shapefile_path):
     polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
 
     for feature in inLayer:  # inLayer is always of size one because polygon is a unique value
+
+        if polygon > 0:
+            break
+
         print("\nProcessing polygon: " + str(polygon+1) + "/" +str(len(inLayer)))
         geom = feature.GetGeometryRef()
         extent = geom.GetEnvelope()

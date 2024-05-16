@@ -57,13 +57,13 @@ def get_max_image_size():
     if capabilities_data.count("MaxWidth") >= 1:
         maxwidth = capabilities_data.split("MaxWidth>")[1].split("</")[0]
     else:
-        print("The MaxWidth is not defined.")
-        maxwidth = None
+        print("The MaxWidth is not defined. Using 2000 as default.")
+        maxwidth = 2000
     if capabilities_data.count("MaxHeight") >= 1:
         maxheight = capabilities_data.split("MaxHeight>")[1].split("</")[0]
     else:
-        print("The MaxHeight is not defined.")
-        maxheight = None
+        print("The MaxHeight is not defined. Using 2000 as default.")
+        maxheight = 2000
 
     #print(maxwidth, maxheight)
     return int(maxwidth),int(maxheight)
@@ -192,13 +192,13 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
 
 
 
-def merge_files(output_wms_path, output_folder_path, shapefile_name, file_type):
+def merge_files(output_wms_path, output_folder_path, output_file_name, file_type):
     """Merge all tif files in a directory with the same shapefile_name into one"""
     #print(shapefile_name)
 
     # files_to_mosaic = ["a.tif", "b.tif", "c.tif.ovr"] # However many you want.
-    pattern1 = f"{shapefile_name}.tif"
-    pattern2 = f"{shapefile_name}_*.tif"
+    pattern1 = f"{output_file_name}.tif"
+    pattern2 = f"{output_file_name}_*.tif"
 
     files_to_mosaic = glob.glob(os.path.join(output_folder_path, pattern1)) + glob.glob(os.path.join(output_folder_path, pattern2))
     #files_to_mosaic = glob.glob(os.path.join(output_folder_path, shapefile_name + "*.tif"))
@@ -207,32 +207,32 @@ def merge_files(output_wms_path, output_folder_path, shapefile_name, file_type):
     tif_files = [f for f in files_to_mosaic if not f.endswith('.ovr')]
 
     if file_type == "meta":
-        shapefile_name = shapefile_name.split(".")[0] + "_meta"
+        output_file_name = output_file_name.split(".")[0] + "_meta"
 
     nodata_value = 0
 
-    possible_ovr_output_file = os.path.join(output_wms_path, shapefile_name + "_merged.tif" + ".ovr")
+    possible_ovr_output_file = os.path.join(output_wms_path, output_file_name.split(".")[0] + "_merged.tif" + ".ovr")
 
     if os.path.isfile(possible_ovr_output_file):
         os.remove(possible_ovr_output_file)
 
-    g = gdal.Warp(os.path.join(output_wms_path, shapefile_name + "_merged.tif"), tif_files,
+    g = gdal.Warp(os.path.join(output_wms_path, output_file_name.split(".")[0] + "_merged.tif"), tif_files,
                   format="GTIFF",
                   options=["COMPRESS=LZW", "TILED=YES"],dstNodata=nodata_value)  # if you want
     g = None  # Close file and flush to disk
 
-def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, shapefile_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
+
+def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """Call several functions to get raster data for dop and meta files"""
 
     #dop
     if wms_calc == True and wms != None:
-        output_file_path = os.path.join(output_wms_dop_path, shapefile_name)
+        output_file_path = os.path.join(output_wms_dop_path, output_file_name)
         extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
 
     #meta
     if meta_calc == True and wms_meta != None:
         #bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
-
         bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
                                                                   'r_aufl': r_aufl,
                                                                   'layer_meta': layer_meta,
@@ -240,15 +240,17 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, shape
                                                                   'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max,
                                                                   'format': img_format,
                                                                   'info_format': meta_info_format,
-                                                                  'acq_date_find_str': b"Bildflugdatum</td><td class=\'td\'>"})
+                                                                  'acq_date_find_str': acq_date_find_str})
 
         bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
-        out_meta = os.path.join(output_wms_meta_path, shapefile_name.split(".")[0] + "_meta.tif")
+        out_meta = os.path.join(output_wms_meta_path, output_file_name.split(".")[0] + "_meta.tif")
         write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
 
 
-def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
+def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """process each polygon of a file"""
+
+    print("shp: ",output_file_name)
 
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max)
@@ -306,24 +308,24 @@ def polygon_processing(geom, output_wms_path, shapefile_name,epsg_code, epsg_cod
                 part = part + 1
                 # time.sleep(360)
 
-                shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(part) + ".tif"
-                extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, shapefile_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n)
+                output_file_name_n = output_file_name + "_" + str(part) + ".tif"
+                extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n)
 
                 #print("Finished part " + str(part) + " from " + str(reduce_p_factor ** 2))
                 polygon_part_progress.update(1)
 
         if wms_calc == True:
-            merge_files(output_wms_path, output_wms_dop_path, shapefile_name.split(".")[0], "dop")
+            merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
 
         if meta_calc == True:
-            merge_files(output_wms_path, output_wms_meta_path, shapefile_name.split(".")[0], "meta")
+            merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
 
     else:
         #print("Extracting raster data from wms ...")
         #print("...")
 
-        shapefile_name_n = shapefile_name.split(".")[0] + ".tif"
-        extract_raster_data_process(output_wms_path, output_wms_path, shapefile_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max)
+        output_file_name_n = output_file_name + ".tif"
+        extract_raster_data_process(output_wms_path, output_wms_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max)
 
 
 
@@ -331,6 +333,8 @@ def process_file(shapefile_path):
     """Processes each file"""
 
     shapefile_dir, shapefile_name = os.path.split(shapefile_path)
+
+    output_file_name = shapefile_name
 
 
     """Create output directory"""
@@ -362,8 +366,17 @@ def process_file(shapefile_path):
         print("\nProcessing polygon: " + str(polygon+1) + "/" +str(len(inLayer)))
         geom = feature.GetGeometryRef()
         extent = geom.GetEnvelope()
-        shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(polygon) + ".shp"
-        polygon_processing(geom, output_wms_path, shapefile_name_n, epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3]) #x_min, y_min, x_max, y_max
+        #shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(polygon)
+
+        if state == "BB_history":
+            years = "hist-" + layer_meta.split("_")[1].split("-",1)[1]  # sth like "dop-19-21"
+            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon) + "_" + years
+        else:
+            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon)
+
+        #polygon_processing(geom, output_wms_path, shapefile_name_n, epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3]) #x_min, y_min, x_max, y_max
+        polygon_processing(geom, output_wms_path,  output_file_name_n, epsg_code, epsg_code_int, extent[0], extent[2],
+                           extent[1], extent[3])  # x_min, y_min, x_max, y_max
         polygon = polygon + 1
 
         #print("Finished polygon: " + str(polygon) + "/" + str(len(inLayer)))
@@ -372,74 +385,68 @@ def process_file(shapefile_path):
 
 
 
+def main(input):
+
+    starttime = time.time()
+
+    global directory_path
+    global r_aufl
+    global wms_ad
+    global layer
+    global layer2
+    global wms_ad_meta
+    global layer_meta
+    global meta_calc
+    global wms_calc
+    global state
+
+    global img_format
+    global meta_info_format
+    global acq_date_find_str
 
 
-starttime = time.time()
+    directory_path = str(input['directory_path'])
+    r_aufl = input['r_aufl']
+    wms_ad = str(input['wms_ad'])
+    layer = str(input['layer'])
+    layer2 = str(input['layer2'])
+    wms_ad_meta = str(input['wms_ad_meta'])
+    layer_meta = str(input['layer_meta'])
+    meta_calc = input['meta_calc']
+    wms_calc = input['wms_calc']
+    state = str(input['state'])
 
-# Specify the directory path
-#directory_path = r"W:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download"
-directory_path = r"C:\Vera\test_skript"
-
-r_aufl = 0.2
-
-"""Variables for image data:"""
-#wms_ad = 'https://sg.geodatenzentrum.de/wms_dop__e7bcdaa6-a1db-f6cc-7b70-85492cfa13d6?request=GetCapabilities&service=WMS&'
-
-
-wms_ad = "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
-
-
-#layer = 'cir'
-#layer = 'rgb'
-layer = 'dop20_bebb_2019_2021_farbe'
-#layer2 = 'ir'
-layer2 = None
-
-"""Variables for meta data:"""
-wms_ad_meta = 'https://isk.geobasis-bb.de/ows/aktualitaeten_wms?'
-#layer_meta = 'bb_dop-16-18_info'
-
-#wms_ad_meta = "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?request=GetCapabilities&service=WMS"
-layer_meta = 'bb_dop-19-21_info'
+    if state == "BB_history":
+        img_format="image/png"
+        meta_info_format="text/html"
+        acq_date_find_str = b"Bildflugdatum</td><td class=\'td\'>"
+        #layer2 = None
+    else:
+        img_format = "image/tiff"
+        meta_info_format = "text/plain"
+        acq_date_find_str = b"\nbildflug = "
 
 
-meta_calc = True
-wms_calc = True
-
-state = "BB_history"
-
+    #process bar for number of files:
+    count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
+    counter = 1
 
 
-if state == "BB_history":
-    img_format="image/png"
-    meta_info_format="text/html"
-    #layer2 = None
-else:
-    img_format = "image/tiff"
-    meta_info_format = "text/plain"
+    # Loop through each file in the directory
+    for filename in os.listdir(directory_path):
+        if filename.endswith(".shp"):
+            # Construct the full file path
+            file_path = os.path.join(directory_path, filename)
+            # Check if it's a file and not a directory (optional, depending on your needs)
+            if os.path.isfile(file_path):
+                print("Processing file: " +filename + "(file " + str(counter) + "/" +str(count_files) + ")")
+                #print("...")
+                process_file(file_path)
+                print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
+
+                counter = counter+1
 
 
-#process bar for number of files:
-count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
-counter = 1
+    endtime = time.time()
 
-
-# Loop through each file in the directory
-for filename in os.listdir(directory_path):
-    if filename.endswith(".shp"):
-        # Construct the full file path
-        file_path = os.path.join(directory_path, filename)
-        # Check if it's a file and not a directory (optional, depending on your needs)
-        if os.path.isfile(file_path):
-            print("Processing file: " +filename + "(file " + str(counter) + "/" +str(count_files) + ")")
-            #print("...")
-            process_file(file_path)
-            print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-
-            counter = counter+1
-
-
-
-endtime = time.time()
-
-print("All done! Execution time: ",endtime - starttime, "seconds")
+    print(f"Execution time of iteration {input.name}: ",endtime - starttime, "seconds")
