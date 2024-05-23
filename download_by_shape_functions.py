@@ -1,6 +1,8 @@
 import os
 from shapely.geometry import box
 from shapely.wkt import loads
+import logging
+import re
 
 def write_meta_raster():
     """similar but not the same, can be unified?!"""
@@ -32,6 +34,41 @@ def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
     return intersection_exists
 
 
+def sort_date_str(str_date):
+    """sort a string of form YYYYaMMaDD or DDaMMaYYYY with a being a random delimiter"""
+    str_date = re.split(r'\D', str_date)
+    if len(str_date[0]) == 2:
+        return int(str_date[2] + str_date[1] + str_date[0])
+    else:
+        return int(str_date[0] + str_date[1] + str_date[2])
+
+
+def extract_and_format_date(date_bytes):
+    # Decode the bytes object to a string using UTF-8 or appropriate encoding
+    date_string = date_bytes.decode('utf-8')
+
+    # Define a regular expression pattern to capture dates with keywords followed by any characters
+    # This pattern handles any delimiter and considers dates possibly not ending with a whitespace
+    date_pattern = r'((Bildflugdatum|B\nbildflug).*?(\d{4})\D(\d{2})\D(\d{2})(?:)?|(\d{2})\D(\d{2})\D(\d{4})(?:)?)|((\d{4})\D(\d{2})\D(\d{2})(?:)?|(\d{2})\D(\d{2})\D(\d{4})(?:)?)'
+
+    matches = re.finditer(date_pattern, date_string, re.IGNORECASE | re.DOTALL)
+
+    preferred_date = 0
+
+    # Check all matches and prioritize those following the specified keywords
+    counter = 0
+    for match in matches:
+        logging.debug("match group: ",match.group())
+        counter = counter + 1
+        if match:
+            if len(match.group()) > 10: #with 'Bildflugdatum' or 'B\nbildflug' so preferred date and can be returned directly
+                str_date = match.group()[-10:]
+                return sort_date_str(str_date)
+            elif len(match.group()) == 10 and preferred_date == 0: #if no key is existent, the first date is returned
+                preferred_date = sort_date_str(match.group())
+
+    return preferred_date
+
 
 def get_acquisition_date(input_dict):
     """ Get acquisition date from the feature info
@@ -61,16 +98,13 @@ def get_acquisition_date(input_dict):
             info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
         )
     info_output = info.read()
+    logging.debug(info_output)
 
-    print(info_output.split(input_dict['acq_date_find_str']))
+    #logging.debug(info_output.split(input_dict['acq_date_find_str']))
 
-    bildflug_date = info_output.split(input_dict['acq_date_find_str'])[1][:10]
+    bildflug_date = extract_and_format_date(info_output)
 
-    bildflug_date = bildflug_date.replace(b"-", b".")
-    bildflug_date = bildflug_date.split(b".")
-    if len(bildflug_date[0]) == 2:
-        bildflug_date = int(bildflug_date[2] + bildflug_date[1] + bildflug_date[0])
-    else:
-        bildflug_date = int(bildflug_date[0] + bildflug_date[1] + bildflug_date[2])
+    logging.info(bildflug_date)
+    logging.info(bildflug_date)
 
     return bildflug_date

@@ -18,6 +18,7 @@ from shapely.wkt import loads
 from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
+import logging
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
@@ -127,14 +128,23 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
 
     #print(output_file_path)
     #print(x_min, x_max, y_min, y_max)
-    img = wms.getmap(
-        layers=[layer],
-        srs=epsg_code,
-        bbox=(x_min, y_min, x_max, y_max),
-        size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-        format=img_format)
+    logging.info("In extract_raster_data")
+    print(x_min, y_min, x_max, y_max)
+    try:
+        img = wms.getmap(
+            layers=[layer],
+            srs=epsg_code,
+            bbox=(x_min, y_min, x_max, y_max),
+            size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
+            format=img_format)
 
-    if layer2 != None:
+    except:
+        logging.error(f"can't get map {wms_ad}")
+        exit()
+
+    #print(layer2)
+    #print(type(layer2))
+    if layer2 != None and layer2 != "None":
         img2 = wms.getmap(
             layers=[layer2],
             srs=epsg_code,
@@ -143,25 +153,31 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             format=img_format)
         merge_raster_bands(img, img2, output_file_path)
 
+    if state == "BB_history":
+        png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)
     else:
-
-        if state == "BB_history":
-            png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)
-        else:
+        try:
             out = open(output_file_path, 'wb')
             out.write(img.read())
             out.close()
+        except:
+            logging.error("Could not write stuff to file.")
 
 
 def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
+    #file_path = r"C:\Vera\test_skript\test_aoi_1.shp" # XXXX REMOVE!!!
     """writes the data from a png file into a raster file with rgb bands using the spatial data from the given shape file"""
-    img2 = Image.open(img)
+    logging.info(img)
+    try:
+        img2 = Image.open(img)
+    except:
+        logging.error("Can't open img")
     img2.save(output_file_path.split(".")[0] + ".tif", "TIFF")
 
     ds = ogr.Open(file_path)
     shplayer = ds.GetLayer()
     spatial_ref = shplayer.GetSpatialRef()
-    extent = shplayer.GetExtent()
+    #extent = shplayer.GetExtent()
 
     tif_ds = gdal.Open(output_file_path.split(".")[0] + ".tif", gdal.GA_Update)
 
@@ -171,7 +187,10 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         tif_srs.ImportFromWkt(spatial_ref.ExportToWkt())
 
         # Set the projection
-        tif_ds.SetProjection(tif_srs.ExportToWkt())
+        try:
+            tif_ds.SetProjection(tif_srs.ExportToWkt())
+        except:
+            logging.error("Can't set projection")
 
         # Calculate pixel size
         pixel_width = (x_max - x_min) / tif_ds.RasterXSize
@@ -183,7 +202,10 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         # [top left x, pixel width, 0, top left y, 0, pixel height (negative because origin is top left corner)]
         # geo_transform = [extent[0], pixel_width, 0, extent[3], 0, -pixel_height]
         geo_transform = [x_min, pixel_width, 0, y_max, 0, -pixel_height]
-        tif_ds.SetGeoTransform(geo_transform)
+        try:
+            tif_ds.SetGeoTransform(geo_transform)
+        except:
+            logging.error("Can't set geotransform")
 
         # Close the dataset to flush changes
         tif_ds = None
@@ -229,22 +251,27 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
     if wms_calc == True and wms != None:
         output_file_path = os.path.join(output_wms_dop_path, output_file_name)
         extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
-
+        logging.info("in extract_raster_data_process after extracting raster data")
     #meta
     if meta_calc == True and wms_meta != None:
         #bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
-        bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
+        try:
+            bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
                                                                   'r_aufl': r_aufl,
                                                                   'layer_meta': layer_meta,
                                                                   'epsg_code': epsg_code,
                                                                   'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max,
                                                                   'format': img_format,
-                                                                  'info_format': meta_info_format,
-                                                                  'acq_date_find_str': acq_date_find_str})
-
+                                                                  'info_format': meta_info_format #,
+                                                                  #'acq_date_find_str': acq_date_find_str
+                                                                  })
+        except:
+            logging.error("Cannot get acquisition date")
+            exit()
         bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
         out_meta = os.path.join(output_wms_meta_path, output_file_name.split(".")[0] + "_meta.tif")
         write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+
 
 
 def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
@@ -261,8 +288,12 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
     wms_meta = None
 
     if wms_calc == True:
-        wms = WebMapService(wms_ad)
-        list(wms.contents)
+        try:
+            wms = WebMapService(wms_ad)
+            list(wms.contents)
+        except:
+            logging.error("cannot connect to wms")
+            exit()
 
     if meta_calc == True:
         wms_meta = WebMapService(wms_ad_meta)
@@ -299,7 +330,11 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 y_min_n = y_min + ((reduce_p_factor - 1) - x) * rangey
 
                 "Skip extracting image file if the part does not intersect with the polygon"
-                check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
+                try:
+                    check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
+                except:
+                    logging.error("cannot check intersection")
+                    exit()
 
                 if check_intersect == False:
                     polygon_part_progress.update(1)
@@ -315,7 +350,11 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 polygon_part_progress.update(1)
 
         if wms_calc == True:
-            merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
+            try:
+                merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
+            except:
+                logging.error("cannot merge files")
+                exit()
 
         if meta_calc == True:
             merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
@@ -368,7 +407,7 @@ def process_file(shapefile_path):
         extent = geom.GetEnvelope()
         #shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(polygon)
 
-        if state == "BB_history":
+        if state == "BB_history": # XXXXX IS THAT GENERALLY NECESSARY??? ARE THESE TRANSFORMATIONS UNIVERSAL XXXXXX
             if polygon == 0:
                 polygon_code = 60
             elif polygon == 1:
@@ -413,7 +452,8 @@ def main(input):
 
     global img_format
     global meta_info_format
-    global acq_date_find_str
+    #global acq_date_find_str
+    global file_path
 
 
     directory_path = str(input['directory_path'])
@@ -430,12 +470,12 @@ def main(input):
     if state == "BB_history":
         img_format="image/png"
         meta_info_format="text/html"
-        acq_date_find_str = b"Bildflugdatum</td><td class=\'td\'>"
+        #acq_date_find_str = b"Bildflugdatum</td><td class=\'td\'>"
         #layer2 = None
     else:
         img_format = "image/tiff"
         meta_info_format = "text/plain"
-        acq_date_find_str = b"\nbildflug = "
+        #acq_date_find_str = b"\nbildflug = "
 
 
     #process bar for number of files:
