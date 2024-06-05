@@ -1,0 +1,16 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="3">
+            <item index="0" class="java.lang.String" itemvalue="GDAL-3.2.3-cp39-cp39-win_amd64.whl" />
+            <item index="1" class="java.lang.String" itemvalue="rasterio-1.2.3-cp39-cp39-win_amd64.whl" />
+            <item index="2" class="java.lang.String" itemvalue="Fiona-1.8.19-cp39-cp39-win_amd64.whl" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

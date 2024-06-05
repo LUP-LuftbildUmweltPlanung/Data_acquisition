@@ -1,0 +1,11 @@
+[INFO] In extract_raster_data
+[ERROR] Cannot extract dop raster data for Biotopdatenbank_LUP_DBU_BTLN_BfN_0.tif
+[INFO] In extract_raster_data
+[ERROR] Cannot extract dop raster data for Biotopdatenbank_LUP_DBU_BTLN_BfN_1_1.tif
+[INFO] In extract_raster_data
+[ERROR] Cannot extract dop raster data for Biotopdatenbank_LUP_DBU_BTLN_BfN_1_2.tif
+[INFO] In extract_raster_data
+[ERROR] Cannot extract dop raster data for Biotopdatenbank_LUP_DBU_BTLN_BfN_1_3.tif
+[INFO] In extract_raster_data
+[ERROR] Cannot extract dop raster data for Biotopdatenbank_LUP_DBU_BTLN_BfN_1_4.tif
+[INFO] In extract_raster_data

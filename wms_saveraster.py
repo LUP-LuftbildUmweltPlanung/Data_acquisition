@@ -87,7 +87,8 @@ def calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max):
 
     return max(x_p_factor, y_p_factor)
 
-def merge_raster_bands(img1, img2, output_file_path):
+"""def merge_raster_bands(img1, img2, output_file_path):
+    print("merges bands")
     img1_path = 'temp_img1.tif'
     img2_path = 'temp_img2.tif'
 
@@ -121,7 +122,66 @@ def merge_raster_bands(img1, img2, output_file_path):
 
     # Optionally, remove the temporary files
     os.remove(img1_path)
+    os.remove(img2_path)"""
+
+
+def merge_raster_bands(img1, img2, output_file_path):
+
+    img1_path = 'temp_img1.tif'
+    img2_path = 'temp_img2.tif'
+
+    with open(img1_path, 'wb') as f:
+        f.write(img1.read())
+    with open(img2_path, 'wb') as f:
+        f.write(img2.read())
+
+
+    # Open the RGB image
+    rgb_ds = gdal.Open(img1_path, gdal.GA_ReadOnly)
+    if rgb_ds is None:
+        logging.error(f"Failed to open the RGB image file of {output_file_path}.")
+        return
+
+    # Open the IR or CIR image
+    ir_ds = gdal.Open(img2_path, gdal.GA_ReadOnly)
+    if ir_ds is None:
+        logging.error("Failed to open the IR/CIR image file.")
+        return
+
+    # Check the number of bands in the RGB image (expecting 3 bands)
+    if rgb_ds.RasterCount != 3:
+        logging.error(f"The RGB image does not have exactly 3 bands {output_file_path}.")
+
+    # Create the output dataset with 4 bands (RGB + 1 IR band)
+    driver = gdal.GetDriverByName('GTiff')
+    output_ds = driver.Create(output_file_path, rgb_ds.RasterXSize, rgb_ds.RasterYSize, 4, gdal.GDT_Byte)
+    if output_ds is None:
+        logging.error(f"Failed to create the output file {output_file_path}.")
+        return
+
+    # Set geo-transform and projection from the RGB image
+    output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
+    output_ds.SetProjection(rgb_ds.GetProjection())
+
+    # Copy RGB bands from the RGB image to the output
+    for i in range(1, 4):
+        band_data = rgb_ds.GetRasterBand(i).ReadAsArray()
+        output_ds.GetRasterBand(i).WriteArray(band_data)
+
+    # Copy the first band of the IR or CIR image to the 4th band of the output
+    ir_band_data = ir_ds.GetRasterBand(1).ReadAsArray()
+    output_ds.GetRasterBand(4).WriteArray(ir_band_data)
+
+    # Close datasets to flush to disk
+    #del output_ds, rgb_ds, ir_ds
+    # Optionally, remove the temporary files
+    os.remove(img1_path)
     os.remove(img2_path)
+    # Clean up
+    output_ds = None
+    rgb_ds = None
+    ir_ds = None
+
 
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path):
     """Get image data for a specified frame and write it into tif file"""
@@ -129,7 +189,8 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
     #print(output_file_path)
     #print(x_min, x_max, y_min, y_max)
     logging.info("In extract_raster_data")
-    print(x_min, y_min, x_max, y_max)
+    #print(x_min, y_min, x_max, y_max)
+    print(img_format)
     try:
         img = wms.getmap(
             layers=[layer],
@@ -140,9 +201,9 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
 
     except:
         logging.error(f"can't get map {wms_ad}")
-        exit()
+        #exit()
 
-    #print(layer2)
+    print(layer2)
     #print(type(layer2))
     if layer2 != None and layer2 != "None":
         img2 = wms.getmap(
@@ -151,6 +212,9 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             bbox=(x_min, y_min, x_max, y_max),
             size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
             format=img_format)
+        #out = open(r"C:\Vera\test_skript\output_wms\test_layer2.tif", 'wb')
+        #out.write(img2.read())
+        #out.close()
         merge_raster_bands(img, img2, output_file_path)
 
     if state == "BB_history":
@@ -250,8 +314,11 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
     #dop
     if wms_calc == True and wms != None:
         output_file_path = os.path.join(output_wms_dop_path, output_file_name)
-        extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
-        logging.info("in extract_raster_data_process after extracting raster data")
+        try:
+            extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
+        except:
+            logging.error(f"Cannot extract dop raster data for {output_file_name}")
+        #logging.info("in extract_raster_data_process after extracting raster data")
     #meta
     if meta_calc == True and wms_meta != None:
         #bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
@@ -267,10 +334,14 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
                                                                   })
         except:
             logging.error("Cannot get acquisition date")
-            exit()
+            #exit()
         bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
         out_meta = os.path.join(output_wms_meta_path, output_file_name.split(".")[0] + "_meta.tif")
-        write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+
+        try:
+            write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+        except:
+            logging.error(f"Cannot write meta raster data for {output_file_name}")
 
 
 
@@ -292,12 +363,16 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             wms = WebMapService(wms_ad)
             list(wms.contents)
         except:
-            logging.error("cannot connect to wms")
-            exit()
+            logging.error("cannot connect to dop wms")
+            #exit()
 
     if meta_calc == True:
-        wms_meta = WebMapService(wms_ad_meta)
-        list(wms_meta.contents)
+        try:
+            wms_meta = WebMapService(wms_ad_meta)
+            list(wms_meta.contents)
+        except:
+            logging.error("cannot connect to meta wms")
+            # exit()
 
     """Calculation"""
     if reduce_p_factor > 1:
@@ -333,8 +408,8 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 try:
                     check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
                 except:
-                    logging.error("cannot check intersection")
-                    exit()
+                    logging.error(f"cannot check intersection for {output_file_name}")
+                    #exit()
 
                 if check_intersect == False:
                     polygon_part_progress.update(1)
@@ -344,27 +419,35 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 # time.sleep(360)
 
                 output_file_name_n = output_file_name + "_" + str(part) + ".tif"
-                extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n)
 
-                #print("Finished part " + str(part) + " from " + str(reduce_p_factor ** 2))
+                try:
+                    extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n)
+                except:
+                    logging.error(f"cannot run process function to extract raster data of partition {part} for {output_file_name_n}")
                 polygon_part_progress.update(1)
 
         if wms_calc == True:
             try:
                 merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
             except:
-                logging.error("cannot merge files")
-                exit()
+                logging.error(f"cannot merge dop files for {output_file_name}")
+                #exit()
 
         if meta_calc == True:
-            merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
+            try:
+                merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
+            except:
+                logging.error(f"cannot merge meta files for {output_file_name}")
+                #exit()
+
 
     else:
-        #print("Extracting raster data from wms ...")
-        #print("...")
-
         output_file_name_n = output_file_name + ".tif"
-        extract_raster_data_process(output_wms_path, output_wms_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max)
+        try:
+            extract_raster_data_process(output_wms_path, output_wms_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max)
+        except:
+            logging.error(f"cannot run process function to extract raster data for {output_file_name_n}")
+
 
 
 
@@ -428,9 +511,6 @@ def process_file(shapefile_path):
         polygon_processing(geom, output_wms_path,  output_file_name_n, epsg_code, epsg_code_int, extent[0], extent[2],
                            extent[1], extent[3])  # x_min, y_min, x_max, y_max
         polygon = polygon + 1
-
-        #print("Finished polygon: " + str(polygon) + "/" + str(len(inLayer)))
-        #print("Finished polygon.\n")
         polygon_progress.update(1)
 
 
