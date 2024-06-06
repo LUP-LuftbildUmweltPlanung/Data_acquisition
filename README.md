@@ -28,16 +28,29 @@ The different scripts correspond to different wms servers or geoportals between 
 
 * Create a directory and place the shape files you want to use for the data acquisition in it
 * Open the program file you want to work with
-* Specify the following parameters:
-```
-directory_path = r"path_to_shapefiles"
-r_aufl = 0.2                                #resolution in m
-wms_ad = "path_to_wms"  
-layer = "layer_name"                    
-layer2 = None                               #optionally a second layer name
-wms_ad_meta = 'path_to_meta_wms'
-layer_meta = 'meta_layer_name'
-```
+* Run wms request:
+  * from csv file:
+    * Specify the parameters for one or more wms request in a csv file with the header:
+      * index,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
+    * The names are indicating the parameter values
+    * separate the parameter values with a comma
+    * Enter one wms request per line
+    * Make sure that the csv file in the "iterate_wms_servers.py" script matches the path to your csv file
+    * Run iterate_wms_servers.py
+  * Alternatively to the csv file you can specify the global parameters in the main function:
+  ```
+  directory_path = r"path_to_shapefiles"
+  r_aufl = 0.2                                #resolution in m
+  wms_ad = "path_to_wms"  
+  layer = "layer_name"                    
+  layer2 = None                               #optionally a second layer name
+  wms_ad_meta = 'path_to_meta_wms'
+  layer_meta = 'meta_layer_name'
+  ...
+  ```
+* Write acquisition dates to shape file or extract data from Brandenburg's geoportal:
+  * Specify the parameters at the start of the program workflow in "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
+  * Run "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
 
 ## Help / Known Issues
 
