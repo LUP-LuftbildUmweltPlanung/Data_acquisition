@@ -13,12 +13,12 @@ import time
 import numpy as np
 import requests
 import math
-from shapely.geometry import Polygon, box
-from shapely.wkt import loads
+#from shapely.geometry import Polygon, box
+#from shapely.wkt import loads
 from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
-import logging
+#import logging
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
@@ -54,19 +54,19 @@ def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg
 
 def get_max_image_size():
     """Return the MaxWidth and MaxHeight of the GetCapabilities XML"""
+
     capabilities_data = requests.get(wms_ad).text
     if capabilities_data.count("MaxWidth") >= 1:
         maxwidth = capabilities_data.split("MaxWidth>")[1].split("</")[0]
     else:
-        print("The MaxWidth is not defined. Using 2000 as default.")
+        sub_log.info("The MaxWidth is not defined. Using 2000 as default.")
         maxwidth = 2000
     if capabilities_data.count("MaxHeight") >= 1:
         maxheight = capabilities_data.split("MaxHeight>")[1].split("</")[0]
     else:
-        print("The MaxHeight is not defined. Using 2000 as default.")
+        sub_log.info("The MaxHeight is not defined. Using 2000 as default.")
         maxheight = 2000
 
-    #print(maxwidth, maxheight)
     return int(maxwidth),int(maxheight)
 
 
@@ -88,29 +88,29 @@ def calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max):
     return max(x_p_factor, y_p_factor)
 
 
-def merge_raster_bands(img1, img2, output_file_path):
+def merge_raster_bands(rgb, ir, output_file_path):
     """Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
     The output is written into a tif-file."""
 
-    img1_path = 'temp_img1.tif'
-    img2_path = 'temp_img2.tif'
+    rgb_path = 'temp_img1.tif'
+    ir_path = 'temp_img2.tif'
 
-    with open(img1_path, 'wb') as f:
-        f.write(img1.read())
-    with open(img2_path, 'wb') as f:
-        f.write(img2.read())
+    with open(rgb_path, 'wb') as f:
+        f.write(rgb.read())
+    with open(ir_path, 'wb') as f:
+        f.write(ir.read())
 
 
     # Open the RGB image
     try:
-        rgb_ds = gdal.Open(img1_path, gdal.GA_ReadOnly)
+        rgb_ds = gdal.Open(rgb_path, gdal.GA_ReadOnly)
     except:
         sub_log.error("Failed to open the RGB image file of %s." % output_file_path)
         return
 
     # Open the IR or CIR image
     try:
-        ir_ds = gdal.Open(img2_path, gdal.GA_ReadOnly)
+        ir_ds = gdal.Open(ir_path, gdal.GA_ReadOnly)
     except:
         sub_log.error("Failed to open the IR/CIR image file of %s." % output_file_path)
         return
@@ -144,22 +144,23 @@ def merge_raster_bands(img1, img2, output_file_path):
     #del output_ds, rgb_ds, ir_ds
     # Optionally, remove the temporary files
     # Clean up
+    os.remove(rgb_path)
+    os.remove(ir_path)
+
     output_ds = None
     rgb_ds = None
     ir_ds = None
 
-    os.remove(img1_path)
-    os.remove(img2_path)
+    #os.remove(rgb_path)
+    #os.remove(ir_path)
+
+
 
 
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path):
     """Get image data for a specified frame and write it into tif file"""
 
-    #print(output_file_path)
-    #print(x_min, x_max, y_min, y_max)
-    #sub_log.info("In extract_raster_data")
-    #print(x_min, y_min, x_max, y_max)
-    #print(img_format)
+    #extract rgb image
     try:
         img = wms.getmap(
             layers=[layer],
@@ -170,10 +171,8 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
 
     except:
         sub_log.error("Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
-        #exit()
 
-    #print(layer2)
-    #print(type(layer2))
+    #extract ir image
     if layer2 != None and layer2 != "None":
         img2 = None
         try:
@@ -189,6 +188,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
         if img2 is not None:
             merge_raster_bands(img, img2, output_file_path)
 
+    #historic Brandenburg wms server contains images in png format
     if state == "BB_history":
         png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)
     else:
@@ -197,23 +197,25 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             out.write(img.read())
             out.close()
         except:
-            sub_log.error("Could not write stuff to file %s." % output_file_path)
+            sub_log.error("Could not write data to file %s." % output_file_path)
 
 
 def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
     """writes the data from a png file into a raster file with rgb bands using the spatial data from the given shape file"""
-    #sub_log.info(img)
+
+    #open png image and save it as img2 in tif format without meta data
     try:
         img2 = Image.open(img)
     except:
         sub_log.error("Can't open temporary PNG image %s for %s" % (img, output_file_path))
     img2.save(output_file_path.split(".")[0] + ".tif", "TIFF")
 
+    #get meta data from shape file
     ds = ogr.Open(file_path)
     shplayer = ds.GetLayer()
     spatial_ref = shplayer.GetSpatialRef()
-    #extent = shplayer.GetExtent()
 
+    #write meta data into tif file
     tif_ds = gdal.Open(output_file_path.split(".")[0] + ".tif", gdal.GA_Update)
 
     if tif_ds:
@@ -230,8 +232,6 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         # Calculate pixel size
         pixel_width = (x_max - x_min) / tif_ds.RasterXSize
         pixel_height = (y_max - y_min) / tif_ds.RasterYSize
-
-        # print(pixel_height, pixel_width)
 
         # Set geotransformation
         # [top left x, pixel width, 0, top left y, 0, pixel height (negative because origin is top left corner)]
@@ -251,14 +251,12 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
 
 def merge_files(output_wms_path, output_folder_path, output_file_name, file_type):
     """Merge all tif files in a directory with the same shapefile_name into one"""
-    #print(shapefile_name)
 
     # files_to_mosaic = ["a.tif", "b.tif", "c.tif.ovr"] # However many you want.
     pattern1 = f"{output_file_name}.tif"
     pattern2 = f"{output_file_name}_*.tif"
 
     files_to_mosaic = glob.glob(os.path.join(output_folder_path, pattern1)) + glob.glob(os.path.join(output_folder_path, pattern2))
-    #files_to_mosaic = glob.glob(os.path.join(output_folder_path, shapefile_name + "*.tif"))
 
     # Filter out .ovr files
     tif_files = [f for f in files_to_mosaic if not f.endswith('.ovr')]
@@ -270,9 +268,11 @@ def merge_files(output_wms_path, output_folder_path, output_file_name, file_type
 
     possible_ovr_output_file = os.path.join(output_wms_path, output_file_name.split(".")[0] + "_merged.tif" + ".ovr")
 
+    #remove .ovr files
     if os.path.isfile(possible_ovr_output_file):
         os.remove(possible_ovr_output_file)
 
+    #create mosaic files
     g = gdal.Warp(os.path.join(output_wms_path, output_file_name.split(".")[0] + "_merged.tif"), tif_files,
                   format="GTIFF",
                   options=["COMPRESS=LZW", "TILED=YES"],dstNodata=nodata_value)  # if you want
@@ -281,27 +281,27 @@ def merge_files(output_wms_path, output_folder_path, output_file_name, file_type
 
 def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """Call several functions to get raster data for dop and meta files"""
-    sub_log.info("Extract_raster_data_process - %s " % output_file_name)
+
     #dop
     if wms_calc == True and wms != None:
         output_file_path = os.path.join(output_wms_dop_path, output_file_name)
+
+        # check if file already exists
         if (os.path.isfile(output_file_path)):
             sub_log.info("Dop  for file %s already exist and calculation is skipped." % output_file_name)
         else:
-            #try:
             extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
-            #except:
-            #    sub_log.error("Cannot extract dop raster data for %s." % output_file_name)
+
     #meta
     if meta_calc == True and wms_meta != None:
-        #bildflug_date = get_acquisition_date(x_min, y_min, x_max, y_max, epsg_code, wms_meta)
         out_meta = os.path.join(output_wms_meta_path, output_file_name.split(".")[0] + "_meta.tif")
 
+        # check if file already exists
         if (os.path.isfile(out_meta)):
             out_meta_exists = output_file_name.split(".")[0] + "_meta.tif"
             sub_log.info("Meta for file %s already exist and calculation is skipped." % out_meta_exists)
         else:
-            sub_log.info(out_meta)
+            sub_log.debug("Getting acquisition date for file %s" %out_meta)
             try:
                 bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
                                                                       'r_aufl': r_aufl,
@@ -309,13 +309,11 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
                                                                       'epsg_code': epsg_code,
                                                                       'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max,
                                                                       'format': img_format,
-                                                                      'info_format': meta_info_format #,
-                                                                      #'acq_date_find_str': acq_date_find_str
+                                                                      'info_format': meta_info_format
                                                                       })
             except:
                 sub_log.error("Cannot get acquisition date for file %s" % out_meta)
                 bildflug_date == 0
-                #exit()
             bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
 
             try:
@@ -328,13 +326,13 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
 def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
     """process each polygon of a file"""
 
-    sub_log.info(output_file_name)
+    sub_log.debug("Processing %s" %output_file_name)
 
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max)
 
 
-    """wms request """
+    #wms request
     wms = None
     wms_meta = None
 
@@ -344,7 +342,6 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             list(wms.contents)
         except:
             sub_log.error("cannot connect to dop wms: %s" % wms_ad)
-            #exit()
 
     if meta_calc == True:
         try:
@@ -352,13 +349,13 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             list(wms_meta.contents)
         except:
             sub_log.error("cannot connect to meta wms: %s" % wms_meta)
-            # exit()
 
-    """Calculation"""
+    #Calculation
     if reduce_p_factor > 1:
-        sub_log.info("Extracting raster data from %s" %output_file_name)
+        sub_log.debug("Extracting raster data from %s" %output_file_name)
         print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
 
+        # check if file already exists
         check_file_dop = os.path.join(output_wms_path, output_file_name + "_merged.tif")
         check_file_meta = os.path.join(output_wms_path,
                                             output_file_name + "_meta_merged.tif")
@@ -366,7 +363,7 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             sub_log.info("Merged dop or meta for file %s already exist and calculation is skipped." % output_file_name)
             return
 
-        """Create dop and meta directories:"""
+        #Create dop and meta directories:
         output_wms_dop_path = output_wms_path
         output_wms_meta_path = output_wms_path
 
@@ -387,38 +384,37 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
 
             for y in list(range(reduce_p_factor)):
 
-                sub_log.info("Processing partition: %s of file %s" % (part,output_file_name))
+                sub_log.debug("Processing partition: %s of file %s" % (part,output_file_name))
 
+                # check if file already exists
                 check_file_part_dop = os.path.join(output_wms_dop_path,output_file_name + "_" + str(part+1) + ".tif")
                 check_file_part_meta = os.path.join(output_wms_meta_path,
                                                              output_file_name + "_" + str(part+1) + "_meta.tif")
                 if (os.path.isfile(check_file_part_dop) or not wms_calc) and (os.path.isfile(check_file_part_meta) or not meta_calc):
-                    existing_file = output_file_name + "_" + str(part)
                     sub_log.info("Dop or meta for file %s already exist and calculation is skipped." %output_file_name)
                     part = part + 1
                     polygon_part_progress.update(1)
                     continue
 
+                #calculating extend of current partition
                 x_min_n = x_min + rangex * y
                 y_max_n = y_max - rangey * x
 
                 x_max_n = x_max - ((reduce_p_factor - 1) - y) * rangex
                 y_min_n = y_min + ((reduce_p_factor - 1) - x) * rangey
 
-                "Skip extracting image file if the part does not intersect with the polygon"
+                #Skip extracting image file if the part does not intersect with the polygon
                 try:
                     check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
                 except:
                     sub_log.error("Cannot check intersection for %s" %output_file_name)
-                    #exit()
 
                 if check_intersect == False:
-                    sub_log.info("Skipping partition without intersection %s" % output_file_name)
+                    sub_log.debug("Skipping partition without intersection %s" % output_file_name)
                     polygon_part_progress.update(1)
                     continue
 
                 part = part + 1
-                # time.sleep(360)
 
                 output_file_name_n = output_file_name + "_" + str(part) + ".tif"
 
@@ -433,20 +429,21 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
             except:
                 sub_log.error("Cannot merge dop files for %s" % output_file_name)
-                #exit()
 
         if meta_calc == True:
             try:
                 merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
             except:
                 sub_log.error("Cannot merge meta files for %s" % output_file_name)
-                #exit()
 
 
     else:
-        sub_log.info("Processing %s without partitioning" % output_file_name)
+        #Processing without partitioning
+
+        sub_log.debug("Processing %s without partitioning" % output_file_name)
         output_file_name_n = output_file_name + ".tif"
 
+        #check if file already exists
         check_file_dop = os.path.join(output_wms_path, output_file_name_n)
         check_file_meta = os.path.join(output_wms_path, output_file_name + "_meta.tif")
         if (os.path.isfile(check_file_dop) or not wms_calc) and (os.path.isfile(check_file_meta) or not meta_calc):
@@ -465,18 +462,14 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
 def process_file(shapefile_path, output_wms_path):
     """Processes each file"""
 
-    sub_log.info(shapefile_path)
+    sub_log.debug("Processing shape file: %s" % shapefile_path)
 
     shapefile_dir, shapefile_name = os.path.split(shapefile_path)
 
     output_file_name = shapefile_name
 
 
-    """Create output directory"""
-    #output_wms_path = func.create_directory(shapefile_dir, "output_wms")
-
-
-    """Get polygon extends and ESPG code from shape file"""
+    #Get polygon extends and ESPG code from shape file
     inDriver = ogr.GetDriverByName("ESRI Shapefile")
     inDataSource = inDriver.Open(shapefile_path, 1)
     inLayer = inDataSource.GetLayer()
@@ -501,9 +494,8 @@ def process_file(shapefile_path, output_wms_path):
         print("\nProcessing polygon: " + str(polygon+1) + "/" +str(len(inLayer)))
         geom = feature.GetGeometryRef()
         extent = geom.GetEnvelope()
-        #shapefile_name_n = shapefile_name.split(".")[0] + "_" + str(polygon)
 
-        if state == "BB_history": # XXXXX IS THAT GENERALLY NECESSARY??? ARE THESE TRANSFORMATIONS UNIVERSAL XXXXXX
+        if state == "BB_history": # XXXXX IS THAT GENERALLY NECESSARY??? ARE THESE TRANSFORMATIONS UNIVERSAL??? XXXXXX
             if polygon == 0:
                 polygon_code = 60
             elif polygon == 1:
@@ -520,15 +512,7 @@ def process_file(shapefile_path, output_wms_path):
         else:
             output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon)
 
-        """check_file_existence = os.path.join(output_wms_path,output_file_name_n + ".tif")
-        check_file_existence_merged = os.path.join(output_wms_path, output_file_name_n + "_merged.tif")
-        if os.path.isfile(check_file_existence) or os.path.isfile(check_file_existence_merged):
-            sub_log.info("File %s already exists and is skipped." % output_file_name_n)
-            polygon = polygon + 1
-            polygon_progress.update(1)
-            continue"""
 
-        #polygon_processing(geom, output_wms_path, shapefile_name_n, epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3]) #x_min, y_min, x_max, y_max
         polygon_processing(geom, output_wms_path,  output_file_name_n, epsg_code, epsg_code_int, extent[0], extent[2],
                            extent[1], extent[3])  # x_min, y_min, x_max, y_max
         polygon = polygon + 1
@@ -554,7 +538,6 @@ def main(input):
 
     global img_format
     global meta_info_format
-    #global acq_date_find_str
     global file_path
     global sub_log
 
@@ -576,18 +559,14 @@ def main(input):
     #configure logger:
     subprocess_log_file = os.path.join(output_wms_path, log_file)
     sub_log = func.config_logger("info", subprocess_log_file)
-    sub_log.info("test sub_log")
 
 
     if state == "BB_history":
         img_format="image/png"
         meta_info_format="text/html"
-        #acq_date_find_str = b"Bildflugdatum</td><td class=\'td\'>"
-        #layer2 = None
     else:
         img_format = "image/tiff"
         meta_info_format = "text/plain"
-        #acq_date_find_str = b"\nbildflug = "
 
 
     #process bar for number of files:
@@ -603,7 +582,6 @@ def main(input):
             # Check if it's a file and not a directory (optional, depending on your needs)
             if os.path.isfile(file_path):
                 print("Processing file: " +filename + "(file " + str(counter) + "/" +str(count_files) + ")")
-                #print("...")
                 process_file(file_path, output_wms_path)
                 print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
 
