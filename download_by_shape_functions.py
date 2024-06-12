@@ -2,6 +2,7 @@ import os
 from shapely.geometry import box
 from shapely.wkt import loads
 import logging
+import logging.config
 import re
 
 def write_meta_raster():
@@ -105,6 +106,36 @@ def get_acquisition_date(input_dict):
     bildflug_date = extract_and_format_date(info_output)
 
     logging.info(bildflug_date)
-    logging.info(bildflug_date)
 
     return bildflug_date
+
+
+def config_logger(level, filename):
+
+    if (level == "critical"):
+        log_level = logging.CRITICAL
+    if (level == "error"):
+        log_level = logging.ERROR
+    elif (level == "warning"):
+        log_level = logging.WARNING
+    elif (level == "info"):
+        log_level = logging.INFO
+    elif (level == "debug"):
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO #default
+
+
+    conf_logger = logging.getLogger(filename)
+    conf_logger.setLevel(log_level)
+
+    # Datei-Handler und Format für das Hauptskript
+    conf_handler = logging.FileHandler(filename, mode='w')
+    conf_handler.setLevel(logging.DEBUG)
+    conf_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    conf_handler.setFormatter(conf_formatter)
+
+    # Handler dem Logger hinzufügen
+    conf_logger.addHandler(conf_handler)
+
+    return conf_logger
