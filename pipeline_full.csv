@@ -1,2 +1,2 @@
-index,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
-0,V:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download\BfN_alleDOPs,0.2,https://sg.geodatenzentrum.de/wms_dop__e7bcdaa6-a1db-f6cc-7b70-85492cfa13d6?request=GetCapabilities&service=WMS&,rgb,ir,http://sg.geodatenzentrum.de/wms_info?,dop,False,True,None
+index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
+0,DBU_wms_log.txt,V:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download\BfN_alleDOPs,0.2,https://sg.geodatenzentrum.de/wms_dop__e7bcdaa6-a1db-f6cc-7b70-85492cfa13d6?request=GetCapabilities&service=WMS&,rgb,ir,http://sg.geodatenzentrum.de/wms_info?,dop,False,True,None
