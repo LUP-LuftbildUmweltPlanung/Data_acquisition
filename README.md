@@ -30,6 +30,7 @@ The different scripts correspond to different wms servers or geoportals between 
 * Open the program file you want to work with
 * Run wms request:
   * from csv file:
+    * For a visualization checkout the folder_structure_diagram and the process_diagram
     * Specify the parameters for one or more wms request in a csv file with the header:
       * index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
     * The names are indicating the parameter values
