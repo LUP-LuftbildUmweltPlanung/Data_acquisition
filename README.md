@@ -31,13 +31,12 @@ The different scripts correspond to different wms servers or geoportals between 
 * Run wms request:
   * from csv file:
     * Specify the parameters for one or more wms request in a csv file with the header:
-      * index,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
+      * index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
     * The names are indicating the parameter values
     * separate the parameter values with a comma
     * Enter one wms request per line
     * Make sure that the csv file in the "iterate_wms_servers.py" script matches the path to your csv file
-    * Run iterate_wms_servers.py
-  * Alternatively to the csv file you can specify the global parameters in the main function:
+  * Alternatively to the csv file you can specify the global parameters in the main function of wms_saveraster.py and call the main function at the bottom of the programm:
   ```
   directory_path = r"path_to_shapefiles"
   r_aufl = 0.2                                #resolution in m
