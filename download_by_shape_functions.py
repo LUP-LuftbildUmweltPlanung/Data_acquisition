@@ -1,13 +1,16 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May  15 12:00:00 2024
+
+@author: Admin
+"""
+
 import os
 from shapely.geometry import box
 from shapely.wkt import loads
 import logging
 import logging.config
 import re
-
-def write_meta_raster():
-    """similar but not the same, can be unified?!"""
-
 
 def create_directory(path, name):
     """Create a directory if it doesn't exist yet"""
@@ -82,8 +85,6 @@ def get_acquisition_date(input_dict):
                             info_format - 'text/html' or 'text/plain'
                             acq_date_find_str - str that is searched for in the feature info to identify the location of the acquisition date
     """
-
-    #logging.info("test3")
     centroid_x = int((input_dict['x_max'] - input_dict['x_min']) / 2)
     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
 
@@ -99,13 +100,8 @@ def get_acquisition_date(input_dict):
             info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
         )
     info_output = info.read()
-    #logging.debug(info_output)
-
-    #logging.debug(info_output.split(input_dict['acq_date_find_str']))
 
     bildflug_date = extract_and_format_date(info_output)
-
-    #logging.info(bildflug_date)
 
     return bildflug_date
 

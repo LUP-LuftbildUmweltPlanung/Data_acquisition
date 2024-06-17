@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Mar  4 14:46:42 2021
+Created on Wed May  15 12:00:00 2024
 
 @author: Admin
 """
@@ -13,12 +13,9 @@ import time
 import numpy as np
 import requests
 import math
-#from shapely.geometry import Polygon, box
-#from shapely.wkt import loads
 from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
-import logging
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
@@ -139,14 +136,8 @@ def merge_raster_bands(rgb, ir, output_file_path):
             band_data = ir_ds.GetRasterBand(1).ReadAsArray()
         output_ds.GetRasterBand(i).WriteArray(band_data)
 
-    # Copy the first band of the IR or CIR image to the 4th band of the output
-    #ir_band_data = ir_ds.GetRasterBand(1).ReadAsArray()
-    #output_ds.GetRasterBand(4).WriteArray(ir_band_data)
-
     # Close datasets to flush to disk
-    #del output_ds, rgb_ds, ir_ds
-    # Optionally, remove the temporary files
-    # Clean up
+    # Remove the temporary files
 
     sub_log.debug(f"Output dataset size: {output_ds.RasterXSize} x {output_ds.RasterYSize} x {output_ds.RasterCount}")
 
@@ -173,10 +164,11 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             format=img_format)
 
     except:
-        sub_log.error("Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
+        sub_log.error("Layer 1: Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
 
     #extract ir image
-    if layer2 != None and layer2 != "None":
+
+    if layer2 != None and layer2 != "None" and layer2 != "nan":
         img2 = None
         try:
             img2 = wms.getmap(
@@ -186,11 +178,10 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
                 size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
                 format=img_format)
         except:
-            sub_log.error("Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
+            sub_log.error("Layer 2: Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
 
         if img2 is not None:
             sub_log.debug("before merge_raster_bands")
-            #temp_1, temp_2 = merge_raster_bands(img, img2, output_file_path)
             try:
                 merge_raster_bands(img, img2, output_file_path)
             except Exception as e:
@@ -288,7 +279,8 @@ def merge_files(output_wms_path, output_folder_path, output_file_name, file_type
     g = None  # Close file and flush to disk
 
 def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type):
-    #Call several functions to get raster data for dop and meta files
+    """Call several functions to get raster data for dop and meta files"""
+
     sub_log.debug("in extract_raster_data_process()")
 
     #dop
@@ -464,12 +456,12 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             sub_log.info("Dop or meta for file %s already exist and calculation is skipped." % output_file_name)
             return
 
-        #try:
-        extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, "wms")
-        extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
-                                    epsg_code_int, x_min, y_min, x_max, y_max,"meta")
-        #except:
-        #sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
+        try:
+            extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, "wms")
+            extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
+                                        epsg_code_int, x_min, y_min, x_max, y_max,"meta")
+        except:
+            sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
 
 
@@ -537,6 +529,7 @@ def process_file(shapefile_path, output_wms_path):
 
 
 def main(input):
+    """Initialize global input variables and loop over files in input directory"""
 
     starttime = time.time()
 
@@ -568,7 +561,6 @@ def main(input):
     meta_calc = input['meta_calc']
     wms_calc = input['wms_calc']
     state = str(input['state'])
-
 
     output_wms_path = func.create_directory(directory_path, "output_wms")
 
