@@ -18,7 +18,7 @@ import math
 from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
-#import logging
+import logging
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
@@ -132,27 +132,30 @@ def merge_raster_bands(rgb, ir, output_file_path):
     output_ds.SetProjection(rgb_ds.GetProjection())
 
     # Copy RGB bands from the RGB image to the output
-    for i in range(1, 4):
-        band_data = rgb_ds.GetRasterBand(i).ReadAsArray()
+    for i in range(1, 5):
+        if i < 4:
+            band_data = rgb_ds.GetRasterBand(i).ReadAsArray()
+        else:
+            band_data = ir_ds.GetRasterBand(1).ReadAsArray()
         output_ds.GetRasterBand(i).WriteArray(band_data)
 
     # Copy the first band of the IR or CIR image to the 4th band of the output
-    ir_band_data = ir_ds.GetRasterBand(1).ReadAsArray()
-    output_ds.GetRasterBand(4).WriteArray(ir_band_data)
+    #ir_band_data = ir_ds.GetRasterBand(1).ReadAsArray()
+    #output_ds.GetRasterBand(4).WriteArray(ir_band_data)
 
     # Close datasets to flush to disk
     #del output_ds, rgb_ds, ir_ds
     # Optionally, remove the temporary files
     # Clean up
-    os.remove(rgb_path)
-    os.remove(ir_path)
+
+    sub_log.debug(f"Output dataset size: {output_ds.RasterXSize} x {output_ds.RasterYSize} x {output_ds.RasterCount}")
 
     output_ds = None
     rgb_ds = None
     ir_ds = None
 
-    #os.remove(rgb_path)
-    #os.remove(ir_path)
+    os.remove(rgb_path)
+    os.remove(ir_path)
 
 
 
@@ -186,12 +189,18 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             sub_log.error("Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
 
         if img2 is not None:
-            merge_raster_bands(img, img2, output_file_path)
+            sub_log.debug("before merge_raster_bands")
+            #temp_1, temp_2 = merge_raster_bands(img, img2, output_file_path)
+            try:
+                merge_raster_bands(img, img2, output_file_path)
+            except Exception as e:
+                sub_log.error("can't run merge_raster_bands: %s" %e)
+            sub_log.debug("after merge_raster_bands")
 
     #historic Brandenburg wms server contains images in png format
     if state == "BB_history":
         png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)
-    else:
+    elif state != "BB_history" and os.path.isfile(output_file_path) is False: #only if it wasn't drawn before so only one layer exists or sth went wrong
         try:
             out = open(output_file_path, 'wb')
             out.write(img.read())
@@ -278,23 +287,29 @@ def merge_files(output_wms_path, output_folder_path, output_file_name, file_type
                   options=["COMPRESS=LZW", "TILED=YES"],dstNodata=nodata_value)  # if you want
     g = None  # Close file and flush to disk
 
-
-def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
-    """Call several functions to get raster data for dop and meta files"""
+def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type):
+    #Call several functions to get raster data for dop and meta files
+    sub_log.debug("in extract_raster_data_process()")
 
     #dop
-    if wms_calc == True and wms != None:
-        output_file_path = os.path.join(output_wms_dop_path, output_file_name)
+    if calc_type == "wms" and wms_calc == True and wms_var != None:
+        sub_log.debug("wms_calc is True and wms is not None")
+        output_file_path = os.path.join(output_wms_path, output_file_name)
 
         # check if file already exists
         if (os.path.isfile(output_file_path)):
             sub_log.info("Dop  for file %s already exist and calculation is skipped." % output_file_name)
         else:
-            extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
+            sub_log.debug("file does not exist yet")
+            try:
+                extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
+            except Exception as e:
+                sub_log.error("Error in extract_raster_data %s" %e)
 
     #meta
-    if meta_calc == True and wms_meta != None:
-        out_meta = os.path.join(output_wms_meta_path, output_file_name.split(".")[0] + "_meta.tif")
+    if calc_type == "meta" and meta_calc == True and wms_var != None:
+        sub_log.debug("meta_calc is true and wms_meta is not None")
+        out_meta = os.path.join(output_wms_path, output_file_name.split(".")[0] + "_meta.tif")
 
         # check if file already exists
         if (os.path.isfile(out_meta)):
@@ -303,7 +318,7 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
         else:
             sub_log.debug("Getting acquisition date for file %s" %out_meta)
             try:
-                bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_meta,
+                bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_var,
                                                                       'r_aufl': r_aufl,
                                                                       'layer_meta': layer_meta,
                                                                       'epsg_code': epsg_code,
@@ -320,7 +335,6 @@ def extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, outpu
                 write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
             except:
                 sub_log.error("Cannot write meta raster data for %s" % output_file_name)
-
 
 
 def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
@@ -419,7 +433,9 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 output_file_name_n = output_file_name + "_" + str(part) + ".tif"
 
                 try:
-                    extract_raster_data_process(output_wms_dop_path, output_wms_meta_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n)
+                    extract_raster_data_process(output_wms_dop_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n, "wms")
+                    extract_raster_data_process(output_wms_meta_path, output_file_name_n,
+                                                wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n, "meta")
                 except:
                     sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (part, output_file_name_n))
                 polygon_part_progress.update(1)
@@ -429,13 +445,11 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
             except:
                 sub_log.error("Cannot merge dop files for %s" % output_file_name)
-
         if meta_calc == True:
             try:
                 merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
             except:
                 sub_log.error("Cannot merge meta files for %s" % output_file_name)
-
 
     else:
         #Processing without partitioning
@@ -450,10 +464,12 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             sub_log.info("Dop or meta for file %s already exist and calculation is skipped." % output_file_name)
             return
 
-        try:
-            extract_raster_data_process(output_wms_path, output_wms_path, output_file_name_n, wms, wms_meta, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max)
-        except:
-            sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
+        #try:
+        extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, "wms")
+        extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
+                                    epsg_code_int, x_min, y_min, x_max, y_max,"meta")
+        #except:
+        #sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
 
 

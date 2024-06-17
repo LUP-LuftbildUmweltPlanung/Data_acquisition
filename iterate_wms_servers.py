@@ -3,15 +3,14 @@ import wms_saveraster as wms_saveraster
 import download_by_shape_functions as func
 import pandas as pd
 import time
-#import logging
+import logging
 
 
 log_file = "iterate_wms_log.txt"
 
 main_log = func.config_logger("debug", log_file)
 
-# Replace 'your_file.csv' with the path to your CSV file
-
+# Replace 'pipeline_full.csv' with the path to your CSV file
 try:
     df = pd.read_csv('pipeline_full.csv', sep=',', index_col="index")
 except:

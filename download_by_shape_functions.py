@@ -59,7 +59,7 @@ def extract_and_format_date(date_bytes):
     # Check all matches and prioritize those following the specified keywords
     counter = 0
     for match in matches:
-        logging.debug("match group: ",match.group())
+        #logging.debug("match group: ",match.group())
         counter = counter + 1
         if match:
             if len(match.group()) > 10: #with 'Bildflugdatum' or 'B\nbildflug' so preferred date and can be returned directly
@@ -83,7 +83,7 @@ def get_acquisition_date(input_dict):
                             acq_date_find_str - str that is searched for in the feature info to identify the location of the acquisition date
     """
 
-
+    #logging.info("test3")
     centroid_x = int((input_dict['x_max'] - input_dict['x_min']) / 2)
     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
 
@@ -99,13 +99,13 @@ def get_acquisition_date(input_dict):
             info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
         )
     info_output = info.read()
-    logging.debug(info_output)
+    #logging.debug(info_output)
 
     #logging.debug(info_output.split(input_dict['acq_date_find_str']))
 
     bildflug_date = extract_and_format_date(info_output)
 
-    logging.info(bildflug_date)
+    #logging.info(bildflug_date)
 
     return bildflug_date
 
@@ -114,7 +114,7 @@ def config_logger(level, filename):
 
     if (level == "critical"):
         log_level = logging.CRITICAL
-    if (level == "error"):
+    elif (level == "error"):
         log_level = logging.ERROR
     elif (level == "warning"):
         log_level = logging.WARNING
@@ -131,7 +131,7 @@ def config_logger(level, filename):
 
     # Datei-Handler und Format für das Hauptskript
     conf_handler = logging.FileHandler(filename, mode='w')
-    conf_handler.setLevel(logging.DEBUG)
+    conf_handler.setLevel(log_level)
     conf_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     conf_handler.setFormatter(conf_formatter)
 
