@@ -1,0 +1,2 @@
+index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
+0,BB_log.txt,test_script\,0.2,https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS,dop20_bebb_2019_2021_farbe,None,https://isk.geobasis-bb.de/ows/aktualitaeten_wms?,bb_dop-19-21_info,True,True,BB_history
