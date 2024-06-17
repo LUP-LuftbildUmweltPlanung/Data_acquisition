@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May  15 12:00:00 2024
+
+@author: Admin
+"""
+
 from bs4 import BeautifulSoup
 import os
 import requests
@@ -336,9 +343,7 @@ def process_file(shapefile_path):
 starttime = time.time()
 
 # Specify the directory path
-#directory_path = r"W:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download"
-directory_path = r"C:\Vera\test_skript2"
-#directory_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung"
+directory_path = r"test_script" #specify your path
 target_epsg_int = 25833
 
 # Download the raster files

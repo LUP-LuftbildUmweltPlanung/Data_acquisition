@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May  15 12:00:00 2024
+
+@author: Admin
+"""
+
 from osgeo import gdal
 import numpy as np
 import geopandas as gpd
@@ -9,10 +16,6 @@ import logging
 import sys
 
 
-# Open the raster file
-#dataset = gdal.Open(r'W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\output_wms\DBUNE_biotope_alleBL_dissolved_2_10_meta_merged.tif', gdal.GA_ReadOnly)
-
-
 def numerical_sort_key(s):
     """Sort a given list of keys alphanumerically: abc1 < abc2 < abc10"""
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
@@ -22,7 +25,6 @@ def get_acqui_date_array(file_path):
     try:
         dataset = gdal.Open(file_path, gdal.GA_ReadOnly)
     except:
-        #
         logging.error("can't open dataset")
         return [(0,0),(0,0)]
 
@@ -34,18 +36,14 @@ def get_acqui_date_array(file_path):
     try:
         data = band.ReadAsArray()
     except:
-        #print(f"Unable to open file {file_path}")
         logging.error(f"Unable to open file {file_path}")
-        #log(f"Unable to open file {file_path}",'e')
         return acqui_dates
     total_elements = data.size
 
     try:
         unique, counts = np.unique(data, return_counts=True)
     except:
-        #print(f"Unable to count occurences of dates {file_path}")
         logging.error(f"Unable to count occurences of dates {file_path}")
-        #log(f"Unable to count occurences of dates {file_path}",'e')
         return acqui_dates
 
 
@@ -57,13 +55,10 @@ def get_acqui_date_array(file_path):
         zero_count = counts[list(unique).index(0)] /total_elements
         sorted_value_counts.append((0, zero_count))
 
-    #print(sorted_value_counts)
-    #exit()
     for i in range(len(acqui_dates)):
         if i < len(sorted_value_counts):
             acqui_dates[i] = sorted_value_counts[i]
 
-    #print(acqui_dates)
     return acqui_dates
 
 
@@ -79,25 +74,15 @@ log_mode = 'debug'
 logging.basicConfig(filename=outputfile, format = "[%(levelname)s] %(message)s", level=logging.DEBUG, filemode='w')
 
 
-#tif_directory_path = r"W:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download\dbu_alleBL_meta\output_wms"
-tif_directory_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\historische_BB\output_wms"
-#tif_directory_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\Biotopdatenbank_ohne_BB\output_wms"
+tif_directory_path = r"path_to_tif_directory"
 
-#shapefile_path = r'W:\2024_BfN_Naturerbe\Daten\LuBi\WMS_Download\dbu_alleBL_meta\DBUNE_biotope_alleBL_dissolved.shp'
-shapefile_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\historische_BB\Biotopdatenbank_LUP_DBU_BTLN_BfN_ohneBBacqu_date.shp"
-#shapefile_path = r"W:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\Biotopdatenbank_ohne_BB\Biotopdatenbank_LUP_DBU_BTLN_BfN_ohneBB.shp"
+shapefile_path = r"path_to_shapefile\shapefile.shp"
 
 
 
 counter = -1
 
 gdf = gpd.read_file(shapefile_path)
-
-# Add new columns initialized with default values or NaN
-#gdf['ac_date_1'] = 0
-#gdf['ac_1_freq'] = 0
-#gdf['ac_date_2'] = 0
-#gdf['ac_2_freq'] = 0
 
 
 #sort files alphanumerically: abc1 < abc2 < abc10
@@ -162,6 +147,8 @@ for filename in files_sorted:
                     else:
                         logging.debug("no hist, same polygon")
                         #same polygon, current date
+
+                        #possible error files:
                         if filename in ["DBUNE_biotope_alleBL_dissolved_4_meta_merged.tif",
                                         "DBUNE_biotope_alleBL_dissolved_9_meta_merged.tif",
                                         "DBUNE_biotope_alleBL_dissolved_16_meta_merged.tif",
@@ -193,6 +180,8 @@ for filename in files_sorted:
                     if polygon_index_check == False:
                         polygon_index = polygon_index +1
                     counter = counter + 1
+
+                    # possible error files:
                     if filename in ["DBUNE_biotope_alleBL_dissolved_4_meta_merged.tif",
                                     "DBUNE_biotope_alleBL_dissolved_9_meta_merged.tif",
                                     "DBUNE_biotope_alleBL_dissolved_16_meta_merged.tif",
@@ -216,8 +205,6 @@ for filename in files_sorted:
                     gdf.loc[polygon_index, 'ac_date_2'] = acqui_date_array[1][0]
                     gdf.loc[polygon_index, 'ac_2_freq'] = acqui_date_array[1][1]
 
-                    #counter = counter + 1
-
             else:
                 pol_compare = polygon
                 pol_curr_compare = polygon_curr
@@ -225,11 +212,8 @@ for filename in files_sorted:
                     min_len = min(len(polygon), len(polygon_curr))
                     pol_compare = polygon[:min_len]
                     pol_curr_compare = polygon_curr[:min_len]
-                #min_len = min(len(polygon), len(polygon_curr))
 
                 if pol_compare == pol_curr_compare:
-                #if polygon_curr[:min_len] == polygon[:min_len]:
-                #if polygon_curr == polygon:
                     if historical_data_curr != historical_data:
                         #historical data, new polygon
                         logging.debug("hist, same polygon")
