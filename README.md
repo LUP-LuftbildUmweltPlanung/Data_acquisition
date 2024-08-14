@@ -2,7 +2,7 @@
 
 Automated download of raster data and acquisition dates from wms servers or geoportals.
 
-## Description
+## Description:
 
 This repository contains several python scripts to download the image data as well as the acquisition dates from a specified wms server or geoportal, given one or multiple shape files.
 The different scripts correspond to different wms servers or geoportals between states. Additionally, the acquisition dates of raster images can be written into the attribute table of a shape file.
