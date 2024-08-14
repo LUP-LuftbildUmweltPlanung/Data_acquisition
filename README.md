@@ -9,7 +9,7 @@ The different scripts correspond to different wms servers or geoportals between 
 
 ## Getting Started
 
-### Dependencies
+### Dependencies:
 
 * GDAL, WebMapService,... (see installation)
 * developed on Windows 10
