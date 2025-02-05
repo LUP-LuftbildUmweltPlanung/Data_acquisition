@@ -485,50 +485,68 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
                 sub_log.error("Cannot write meta raster data for %s" % output_file_name)
 
 
-def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_code_int, x_min, y_min, x_max, y_max):
-    """process each polygon of a file"""
+def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
+                       y_max):
+    """Process each polygon of a file and handle WMS version selection."""
 
-    sub_log.debug("Processing %s" %output_file_name)
+    sub_log.debug("Processing %s" % output_file_name)
 
-    maxwidth, maxheight = get_max_image_size()
-    reduce_p_factor = calculate_p_factor(maxwidth, maxheight, x_min, y_min, x_max, y_max)
+    reduce_p_factor = calculate_p_factor(img_width, img_height, x_min, y_min, x_max, y_max)
 
-
-    #wms request
+    # Initialize variables
     wms = None
     wms_meta = None
+    wms_version_used = None
+    wms_meta_version_used = None
 
-    if wms_calc == True:
-        try:
-            wms = WebMapService(wms_ad)
-            list(wms.contents)
-        except:
-            sub_log.error("cannot connect to dop wms: %s" % wms_ad)
+    def try_connect_wms(url, versions):
+        """Attempt to connect to a WMS server using multiple versions and return the successful one."""
+        for version in versions:
+            try:
+                wms_service = WebMapService(url, version=version, timeout=120, parse_remote_metadata=True)
+                if wms_service.contents:  # Check if layers are available
+                    print(f"✅ Successfully connected to WMS: {url} using version {version}")
+                    return wms_service, version
+            except Exception as e:
+                sub_log.warning(f"⚠️ Failed to connect to {url} using version {version}: {e}")
+        return None, None  # If all attempts fail
 
-    if meta_calc == True:
-        try:
-            wms_meta = WebMapService(wms_ad_meta)
-            list(wms_meta.contents)
-        except:
-            sub_log.error("cannot connect to meta wms: %s" % wms_meta)
+    # Try connecting to WMS for dop (aerial images)
+    if wms_calc:
+        wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+        if wms is None:
+            sub_log.error(f"❌ Failed to connect to dop WMS: {wms_ad}")
 
-    #Calculation
+    # Try connecting to WMS for meta (metadata layers)
+    if meta_calc:
+        wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+        if wms_meta is None:
+            sub_log.error(f"❌ Failed to connect to meta WMS: {wms_ad_meta}")
+
+    # Print which versions were used
+    if wms_version_used:
+        print(f"📡 Data was downloaded using WMS version: {wms_version_used}")
+        sub_log.info(f"Data was downloaded using WMS version: {wms_version_used}")
+
+    if wms_meta_version_used:
+        print(f"📡 Meta data was downloaded using WMS version: {wms_meta_version_used}")
+        sub_log.info(f"Meta data was downloaded using WMS version: {wms_meta_version_used}")
+    # Calculation
     if reduce_p_factor > 1:
-        sub_log.debug("Extracting raster data from %s" %output_file_name)
+        sub_log.debug("Extracting raster data from %s" % output_file_name)
         print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
 
         # check if file already exists
         check_file_dop = os.path.join(output_wms_path, output_file_name + "_merged.tif")
         check_file_meta = os.path.join(output_wms_path,
-                                            output_file_name + "_meta_merged.tif")
+                                       output_file_name + "_meta_merged.tif")
         if (os.path.isfile(check_file_dop) or not wms_calc) and (os.path.isfile(check_file_meta) or not meta_calc):
             sub_log.info("Merged dop or meta for file %s already exist and calculation is skipped." % output_file_name)
             return
 
-        #Create dop and meta directories:
+        # Create dop and meta directories:
         output_wms_dop_path = output_wms_path
         output_wms_meta_path = output_wms_path
-
 
         if wms_calc == True:
             output_wms_dop_path = func.create_directory(output_wms_path, "dop")
@@ -536,40 +554,41 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
         if meta_calc == True:
             output_wms_meta_path = func.create_directory(output_wms_path, "meta")
 
-        rangex = (x_max - x_min) / reduce_p_factor
-        rangey = (y_max - y_min) / reduce_p_factor
+        rangex = (x_max - x_min) / reduce_p_factor  # CHANGE TO 400 (tile size)
+        rangey = (y_max - y_min) / reduce_p_factor  # CHANGE TO 400 (tile size)
 
         part = 0
 
-        polygon_part_progress = tqdm(total=reduce_p_factor**2, desc='Processing partition of polygon', leave=False)
+        polygon_part_progress = tqdm(total=reduce_p_factor ** 2, desc='Processing partition of polygon', leave=False)
         for x in list(range(reduce_p_factor)):
 
             for y in list(range(reduce_p_factor)):
 
-                sub_log.debug("Processing partition: %s of file %s" % (part,output_file_name))
+                sub_log.debug("Processing partition: %s of file %s" % (part, output_file_name))
 
                 # check if file already exists
-                check_file_part_dop = os.path.join(output_wms_dop_path,output_file_name + "_" + str(part+1) + ".tif")
+                check_file_part_dop = os.path.join(output_wms_dop_path, output_file_name + "_" + str(part + 1) + ".tif")
                 check_file_part_meta = os.path.join(output_wms_meta_path,
-                                                             output_file_name + "_" + str(part+1) + "_meta.tif")
-                if (os.path.isfile(check_file_part_dop) or not wms_calc) and (os.path.isfile(check_file_part_meta) or not meta_calc):
-                    sub_log.info("Dop or meta for file %s already exist and calculation is skipped." %output_file_name)
+                                                    output_file_name + "_" + str(part + 1) + "_meta.tif")
+                if (os.path.isfile(check_file_part_dop) or not wms_calc) and (
+                        os.path.isfile(check_file_part_meta) or not meta_calc):
+                    sub_log.info("Dop or meta for file %s already exist and calculation is skipped." % output_file_name)
                     part = part + 1
                     polygon_part_progress.update(1)
                     continue
 
-                #calculating extend of current partition
+                # calculating extend of current partition
                 x_min_n = x_min + rangex * y
                 y_max_n = y_max - rangey * x
 
                 x_max_n = x_max - ((reduce_p_factor - 1) - y) * rangex
                 y_min_n = y_min + ((reduce_p_factor - 1) - x) * rangey
 
-                #Skip extracting image file if the part does not intersect with the polygon
+                # Skip extracting image file if the part does not intersect with the polygon
                 try:
-                    check_intersect = func.polygon_partition_intersect(geom, x_min_n,y_min_n,x_max_n,y_max_n)
+                    check_intersect = func.polygon_partition_intersect(geom, x_min_n, y_min_n, x_max_n, y_max_n)
                 except:
-                    sub_log.error("Cannot check intersection for %s" %output_file_name)
+                    sub_log.error("Cannot check intersection for %s" % output_file_name)
 
                 if check_intersect == False:
                     sub_log.debug("Skipping partition without intersection %s" % output_file_name)
@@ -581,31 +600,46 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
                 output_file_name_n = output_file_name + "_" + str(part) + ".tif"
 
                 try:
-                    extract_raster_data_process(output_wms_dop_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n, "wms")
+                    extract_raster_data_process(output_wms_dop_path, output_file_name_n, wms, epsg_code, epsg_code_int,
+                                                x_min_n, y_min_n, x_max_n, y_max_n, "wms")
                     extract_raster_data_process(output_wms_meta_path, output_file_name_n,
-                                                wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n, "meta")
+                                                wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n,
+                                                "meta")
                 except:
-                    sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (part, output_file_name_n))
+                    sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (
+                        part, output_file_name_n))
                 polygon_part_progress.update(1)
 
+        print("Preparing to merge files...")
+        print(f"Output WMS path: {output_wms_path}")
+        print(f"Output folder path: {output_wms_path}")
+        print(f"Output file name: {output_file_name}")
+
         if wms_calc == True:
+            # if merge_wms == True:
+            print(f"Creating directory at {output_wms_path}")
             try:
-                merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
+                # merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
+                merge_files(output_wms_path, output_wms_dop_path, output_file_name, batch_size=batch_size,
+                            file_type="dop")
+
             except:
                 sub_log.error("Cannot merge dop files for %s" % output_file_name)
         if meta_calc == True:
+            # if merge_wms == True:
             try:
-                merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
+                # merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
+                merge_files(output_wms_path, output_wms_meta_path, output_file_name, batch_size=batch_size,
+                            file_type="meta")
             except:
                 sub_log.error("Cannot merge meta files for %s" % output_file_name)
 
     else:
-        #Processing without partitioning
-
+        # Processing without partitioning
         sub_log.debug("Processing %s without partitioning" % output_file_name)
         output_file_name_n = output_file_name + ".tif"
 
-        #check if file already exists
+        # check if file already exists
         check_file_dop = os.path.join(output_wms_path, output_file_name_n)
         check_file_meta = os.path.join(output_wms_path, output_file_name + "_meta.tif")
         if (os.path.isfile(check_file_dop) or not wms_calc) and (os.path.isfile(check_file_meta) or not meta_calc):
@@ -613,11 +647,13 @@ def polygon_processing(geom, output_wms_path, output_file_name,epsg_code, epsg_c
             return
 
         try:
-            extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, "wms")
+            extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
+                                        y_min, x_max, y_max, "wms")
             extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
-                                        epsg_code_int, x_min, y_min, x_max, y_max,"meta")
+                                        epsg_code_int, x_min, y_min, x_max, y_max, "meta")
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
+
 
 
 
