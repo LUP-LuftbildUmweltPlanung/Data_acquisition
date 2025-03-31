@@ -340,35 +340,6 @@ def get_nodata_from_raster(raster_path):
         return nodata
     return None
 
-
-
-def merge_tiles_using_vrt(input_folder, output_file):
-    # Get a list of all .tif files in the output folder
-    tiff_files = glob.glob(os.path.join(input_folder, "*.tif"))
-
-    if not tiff_files:
-        print("No TIFF files found in the directory.")
-        return
-
-    # Build a VRT (Virtual Raster Table) from the list of files
-    vrt_options = gdal.BuildVRTOptions(separate=False)  # separate=False means no multi-banding
-    vrt = gdal.BuildVRT("", tiff_files, options=vrt_options)
-
-    if vrt is None:
-        print("Failed to create VRT.")
-        return
-
-    # Translate the VRT to a GeoTIFF format with LZW compression and NoData value handling
-    translate_options = gdal.TranslateOptions(
-        format="GTiff",
-        creationOptions=["COMPRESS=LZW"],  # Apply LZW compression
-        noData=None  # Set the NoData value to None
-    )
-
-    gdal.Translate(output_file, vrt, options=translate_options)
-
-    print(f"Merged {len(tiff_files)} tiles into {output_file} with LZW compression and NoData set to None.")
-
 def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AOI=None, year=None):
     """
     Merge all TIFF files in the directory into a single output using GDAL VRT + Translate.
