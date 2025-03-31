@@ -1,0 +1,21 @@
+[
+  {
+	"index": 0,
+    "log_file": "BB_log.txt",
+    "directory_path": "test_script\\",
+    "r_aufl": 0.2,
+    "wms_ad": "https://sg.geodatenzentrum.de/wms_dop__14152289-bb6b-bcbb-93d7-74602cfa13d6?request=GetCapabilities&service=WMS&",
+    "layer": "rgb",
+    "layer2": null,
+    "wms_ad_meta": "http://sg.geodatenzentrum.de/wms_info?",
+    "layer_meta": "dop",
+    "meta_calc": true,
+    "wms_calc": true,
+    "state": "None",
+    "img_height": null,
+    "img_width": null,
+    "AOI": null,
+    "year": null,
+    "merge": true
+  }
+]
