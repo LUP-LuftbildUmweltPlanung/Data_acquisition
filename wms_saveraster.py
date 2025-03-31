@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May  15 12:00:00 2024
-
-@author: Admin
-"""
-
 import os
 from osgeo import ogr, gdal, osr
 from owslib.wms import WebMapService
@@ -16,23 +9,25 @@ import math
 from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
-
+from pathlib import Path
 # adjusted
 """
 First function: Relies on provided x_min, y_min, x_max, and y_max to set up the raster's extent and resolution.
 Second function: Uses a fixed tile size (img_width and img_height) and resolution (r_aufl) to determine the extent (x_max, y_max) and the geotransform.
 """
-def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int):
+def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
     """Creates a raster file with one band that contains the acquisition date of every pixel"""
-    # Calculate x_max and y_max based on fixed tile size and resolution
-    x_max = x_min + img_width * r_aufl  ## new
-    y_max = y_min + img_height * r_aufl  ## new
-
-    # nrows, ncols = bildflug_array.shape
-    nrows, ncols = img_width, img_height
-
-    # Set the geotransform
-    geotransform = (x_min, r_aufl, 0, y_max, 0, -r_aufl)  # new
+    if img_width is not None and img_height is not None and r_aufl is not None:
+        # Adjust bounds based on tile size and resolution
+        x_max = x_min + img_width * r_aufl
+        y_max = y_min + img_height * r_aufl
+        nrows, ncols = img_height, img_width
+        geotransform = (x_min, r_aufl, 0, y_max, 0, -r_aufl)
+    else:
+        # Fallback to shape of array and calculated resolution
+        nrows, ncols = bildflug_array.shape
+        # Use NEGATIVE pixel height for correct north-up orientation
+        geotransform = (x_min, (x_max - x_min) / ncols, 0, y_max, 0, -((y_max - y_min) / nrows))
 
     # Create a driver to write the file. 'GTiff' is for GeoTIFF files. You can choose other formats.
     driver = gdal.GetDriverByName('GTiff')
@@ -76,15 +71,19 @@ def get_max_image_size():
 First function: Uses maxwidth and maxheight to determine the maximum allowable tile size, with default values of 1 if either is None.
 Second function: Uses img_width and img_height to directly specify the desired image size for each tile.
 """
-def calculate_p_factor(img_width, img_height, x_min, y_min, x_max, y_max):
+def calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width=None, img_height=None, maxwidth=None, maxheight=None):
     """Calculate the p-factor: into how many pieces the given extent has to be partitioned for calculation based on the desired image size."""
     # Calculate the extent in x and y directions
     x_extend = (x_max - x_min) / r_aufl
     y_extend = (y_max - y_min) / r_aufl
-  
-    # Calculate the partition factors based on the specified image width and height
-    x_p_factor = math.ceil(x_extend / img_width)
-    y_p_factor = math.ceil(y_extend / img_height)
+
+    # Use image size if provided, otherwise use max tile size
+    if img_width is not None and img_height is not None:
+        x_p_factor = math.ceil(x_extend / img_width)
+        y_p_factor = math.ceil(y_extend / img_height)
+    else:
+        x_p_factor = math.ceil(x_extend / maxwidth) if maxwidth else 1
+        y_p_factor = math.ceil(y_extend / maxheight) if maxheight else 1
 
     # Return the maximum of the two partition factors
     return max(x_p_factor, y_p_factor)
@@ -185,12 +184,18 @@ Dynamic Calculation of x_max and y_max: The new version dynamically calculates t
 Fixed Image Size for WMS Requests: In the new version, the WMS image size is fixed to img_width and img_height, while the previous version adjusts the image size based on the bounding box and resolution.
 Georeferencing: The new version includes an extra step to apply georeferencing to the output file after it has been saved, ensuring the TIFF is correctly aligned spatially, while the previous version does not.
 """
-def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path):
+def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, img_width, img_height, r_aufl):
+
     """Get image data for a specified frame and write it into tif file"""
 
-    # Calculate x_max and y_max based on fixed tile size and resolution
-    x_max = x_min + img_width * r_aufl  ## new
-    y_max = y_min + img_height * r_aufl  ## new
+    # Adjust x_max and y_max if fixed size is defined
+    if img_width is not None and img_height is not None and r_aufl is not None:
+        x_max = x_min + img_width * r_aufl
+        y_max = y_min + img_height * r_aufl
+        size = (img_width, img_height)
+    else:
+        # Estimate size based on resolution and bounding box
+        size = (round((x_max - x_min) / r_aufl), round((y_max - y_min) / r_aufl))
 
     # extract rgb image
     try:
@@ -199,7 +204,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             srs=epsg_code,
             bbox=(x_min, y_min, x_max, y_max),
             # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-            size=(img_width, img_height),
+            size=size,
             format=img_format)
 
     except:
@@ -215,7 +220,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
                 srs=epsg_code,
                 bbox=(x_min, y_min, x_max, y_max),
                 # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-                size=(img_width, img_height),
+                size=size,
                 format=img_format)
         except:
             sub_log.error("Layer 2: Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
@@ -326,113 +331,100 @@ They improve efficiency when handling large raster datasets by ensuring a struct
 Ensures that the final output file has correct spatial alignment, which is critical for accurate visualization in GIS and WMS applications.
 Helps prevent issues like gaps or overlaps between tiles when merging large geospatial datasets.
 """
+# extract NoData from the first input tile
+def get_nodata_from_raster(raster_path):
+    ds = gdal.Open(raster_path)
+    if ds is not None and ds.GetRasterBand(1) is not None:
+        nodata = ds.GetRasterBand(1).GetNoDataValue()
+        ds = None
+        return nodata
+    return None
 
-def merge_files(input_dir, output_file_name, output_wms_path, batch_size, file_type=None):
+
+
+def merge_tiles_using_vrt(input_folder, output_file):
+    # Get a list of all .tif files in the output folder
+    tiff_files = glob.glob(os.path.join(input_folder, "*.tif"))
+
+    if not tiff_files:
+        print("No TIFF files found in the directory.")
+        return
+
+    # Build a VRT (Virtual Raster Table) from the list of files
+    vrt_options = gdal.BuildVRTOptions(separate=False)  # separate=False means no multi-banding
+    vrt = gdal.BuildVRT("", tiff_files, options=vrt_options)
+
+    if vrt is None:
+        print("Failed to create VRT.")
+        return
+
+    # Translate the VRT to a GeoTIFF format with LZW compression and NoData value handling
+    translate_options = gdal.TranslateOptions(
+        format="GTiff",
+        creationOptions=["COMPRESS=LZW"],  # Apply LZW compression
+        noData=None  # Set the NoData value to None
+    )
+
+    gdal.Translate(output_file, vrt, options=translate_options)
+
+    print(f"Merged {len(tiff_files)} tiles into {output_file} with LZW compression and NoData set to None.")
+
+def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AOI=None, year=None):
     """
-    Merge all TIFF files in the specified directory into a single output file in batches.
+    Merge all TIFF files in the directory into a single output using GDAL VRT + Translate.
+
     Args:
-        input_dir (str): Path to the directory containing the TIFF files.
-        output_file_name (str): The common part of the name of the TIFF files to merge (e.g., 'Proesa' for 'Proesa_1.tif').
-        output_wms_path (str): Path to save the merged output file.
-        batch_size (int): Number of files to process in each batch.
-        file_type (str, optional): File type specification, defaults to None.
-                                   If 'meta', the output file name will be adjusted.
+        input_dir (str): Folder containing tiles.
+        output_file_name (str): Base output name.
+        output_wms_path (str): Destination folder for the final merged output.
+        file_type (str): 'meta' or 'dop', added to the filename suffix.
+        AOI (str): Optional Area of Interest for filename.
+        year (str): Optional year for filename.
     """
-    print('Starting merge process...')
+    print("Starting merge...")
 
-    # Define file-matching patterns
-    if file_type == "meta":
-        input_files = glob.glob(os.path.join(input_dir, "*_meta.tif"))
-    else:
-        input_files = glob.glob(os.path.join(input_dir, "*.tif"))
+    # File pattern based on type
+    pattern = "*_meta.tif" if file_type == "meta" else "*.tif"
+    input_files = glob.glob(os.path.join(input_dir, pattern))
+    input_files = [f for f in input_files if not f.endswith(".ovr")]
 
-    # Exclude .ovr files
-    input_files = [f for f in input_files if not f.endswith('.ovr')]
-
-    # Check if matching files are found
     if not input_files:
-        raise FileNotFoundError(f"No matching TIFF files found in {input_dir} for {file_type}.")
+        raise FileNotFoundError(f"No TIFFs found in {input_dir} for type '{file_type}'")
 
-    print(f"Found {len(input_files)} files to merge for file type: {file_type}")
-
-    # Sort files by spatial proximity for better merging
     input_files = sort_files_by_spatial_proximity(input_files)
+    print(f" Total input files: {len(input_files)}")
 
-    temp_files = []
+    # Construct suffix for output file
+    suffix_parts = [str(year) if year else None, str(AOI) if AOI else None, str(file_type) if file_type else None]
+    suffix = "_".join(filter(None, suffix_parts))
+    final_output_file = os.path.join(output_wms_path, f"{output_file_name}_{suffix}_merged.tif")
+
+    # Get nodata value from the first tile
+    nodata_value = get_nodata_from_raster(input_files[0])
+
+    # Build VRT
+    vrt_file = os.path.join(input_dir, "temp_merged.vrt")
+    vrt_options = gdal.BuildVRTOptions(separate=False)
+    vrt = gdal.BuildVRT(vrt_file, input_files, options=vrt_options)
+    if vrt is None:
+        raise RuntimeError("Failed to create VRT for merging.")
+
+    # Prepare translate options with compression + BigTIFF
     compress_options = [
-        "-co", "COMPRESS=DEFLATE",
-        "-co", "TILED=YES",
-        "-co", "BIGTIFF=YES",
-        "-a_nodata", "0"
+        "COMPRESS=DEFLATE",
+        "TILED=YES",
+        "BIGTIFF=YES"
     ]
+    translate_options = gdal.TranslateOptions(
+        format="GTiff",
+        creationOptions=compress_options,
+        noData=nodata_value
+    )
 
-    # Process files in batches
-    for i in range(0, len(input_files), batch_size):
-        batch_files = input_files[i:i + batch_size]
-        batch_output_file = os.path.join(input_dir, f"batch_{i // batch_size}.tif")
+    # Translate to final output
+    gdal.Translate(final_output_file, vrt, options=translate_options)
+    print(f" Merged output saved at {final_output_file}")
 
-        # Skip if the batch file already exists
-        if os.path.exists(batch_output_file):
-            print(f"Batch file {batch_output_file} already exists. Skipping...")
-            temp_files.append(batch_output_file)
-            continue
-
-        # Create VRT file for the batch
-        vrt_file = os.path.join(input_dir, f"batch_{i // batch_size}.vrt")
-        try:
-            gdal.BuildVRT(vrt_file, batch_files)
-        except Exception as e:
-            print(f"Failed to create VRT for batch {i // batch_size}: {e}")
-            continue
-
-        # Translate the VRT to a compressed TIFF
-        try:
-            gdal.Translate(batch_output_file, vrt_file, options=gdal.TranslateOptions(options=compress_options))
-        except Exception as e:
-            print(f"Failed to create compressed TIFF for batch {i // batch_size}: {e}")
-            continue
-
-        # Verify the output and clean up
-        if os.path.exists(batch_output_file):
-            temp_files.append(batch_output_file)
-            os.remove(vrt_file)
-            print(f"Processed batch {i // batch_size + 1}/{(len(input_files) + batch_size - 1) // batch_size}")
-        else:
-            print(f"Batch file {batch_output_file} was not created.")
-
-    # Ensure batch files exist for final merging
-    if not temp_files:
-        raise RuntimeError("No batch files were created. Cannot proceed with the merge.")
-
-    # Merge all batch files into a single output file
-    final_output_file = os.path.join(output_wms_path, f"{output_file_name}_{file_type}_merged.tif")
-    final_vrt_file = os.path.join(input_dir, "final_merged.vrt")
-    try:
-        gdal.BuildVRT(final_vrt_file, temp_files)
-
-        # Ensure multi-band output
-        translate_options = gdal.TranslateOptions(
-            options=compress_options,
-            outputType=gdal.GDT_Int32 if file_type == "meta" else gdal.GDT_Byte,  # ⬅️ Set Int32 for meta files
-            creationOptions=["NBITS=8"]  # Set bits per band if needed
-        )
-        gdal.Translate(final_output_file, final_vrt_file, options=translate_options)
-    except Exception as e:
-        raise RuntimeError(f"Failed to create the final merged file: {e}")
-
-    # Clean up temporary files
-    for temp_file in temp_files:
-        try:
-            os.remove(temp_file)
-        except OSError as e:
-            print(f"Failed to remove temporary file {temp_file}: {e}")
-
-    try:
-        os.remove(final_vrt_file)
-    except OSError as e:
-        print(f"Failed to remove VRT file {final_vrt_file}: {e}")
-
-    print(f"Merged and compressed TIFF file created at {final_output_file}")
 
 def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type):
     """Call several functions to get raster data for dop and meta files"""
@@ -450,7 +442,8 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
         else:
             sub_log.debug("file does not exist yet")
             try:
-                extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path)
+                extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path, img_width,
+                                    img_height, r_aufl)
             except Exception as e:
                 sub_log.error("Error in extract_raster_data %s" %e)
 
@@ -480,7 +473,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
             bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
 
             try:
-                write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int)
+                write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width, img_height, r_aufl)
             except:
                 sub_log.error("Cannot write meta raster data for %s" % output_file_name)
 
@@ -491,7 +484,8 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
 
     sub_log.debug("Processing %s" % output_file_name)
 
-    reduce_p_factor = calculate_p_factor(img_width, img_height, x_min, y_min, x_max, y_max)
+    maxwidth, maxheight = get_max_image_size()
+    reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
 
     # Initialize variables
     wms = None
@@ -505,23 +499,23 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             try:
                 wms_service = WebMapService(url, version=version, timeout=120, parse_remote_metadata=True)
                 if wms_service.contents:  # Check if layers are available
-                    print(f"✅ Successfully connected to WMS: {url} using version {version}")
+                    print(f"Successfully connected to WMS: {url} using version {version}")
                     return wms_service, version
             except Exception as e:
-                sub_log.warning(f"⚠️ Failed to connect to {url} using version {version}: {e}")
+                sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
         return None, None  # If all attempts fail
 
     # Try connecting to WMS for dop (aerial images)
     if wms_calc:
         wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
         if wms is None:
-            sub_log.error(f"❌ Failed to connect to dop WMS: {wms_ad}")
+            sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
 
     # Try connecting to WMS for meta (metadata layers)
     if meta_calc:
         wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
         if wms_meta is None:
-            sub_log.error(f"❌ Failed to connect to meta WMS: {wms_ad_meta}")
+            sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
 
     # Print which versions were used
     if wms_version_used:
@@ -620,8 +614,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             print(f"Creating directory at {output_wms_path}")
             try:
                 # merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
-                merge_files(output_wms_path, output_wms_dop_path, output_file_name, batch_size=batch_size,
-                            file_type="dop")
+                merge_files(output_wms_path, output_wms_dop_path, output_file_name, file_type="dop")
 
             except:
                 sub_log.error("Cannot merge dop files for %s" % output_file_name)
@@ -629,8 +622,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             # if merge_wms == True:
             try:
                 # merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
-                merge_files(output_wms_path, output_wms_meta_path, output_file_name, batch_size=batch_size,
-                            file_type="meta")
+                merge_files(output_wms_path, output_wms_meta_path, output_file_name,  file_type="meta")
             except:
                 sub_log.error("Cannot merge meta files for %s" % output_file_name)
 
@@ -744,8 +736,6 @@ def main(input):
     global img_width  # new
     global img_height  # new
     global merge  # new
-    global predict_model
-    global batch_size
 
     log_file = str(input['log_file'])
     directory_path = str(input['directory_path'])
@@ -755,18 +745,24 @@ def main(input):
     layer2 = str(input['layer2'])
     wms_ad_meta = str(input['wms_ad_meta'])
     layer_meta = str(input['layer_meta'])
-    batch_size = int(input["batch_size"])  # new
     meta_calc = input['meta_calc']
     img_width = input["img_width"]  # new
     img_height = input["img_height"]  # new
-    predict_model = str(input["predict_model"])  # new
-    AOI = str(input["AOI"])  # new
-    year = str(input["year"])  # new
+    AOI = input.get("AOI", None)
+    year = str(input.get("year", None))  # already present, just make sure it's str
     merge = input["merge"]
     wms_calc = input['wms_calc']
     state = str(input['state'])
 
+    if AOI in [None, "None", "null", ""]:
+        AOI = None
+
+    if year in [None, "None", "null", ""]:
+        year = None
+
     output_wms_path = func.create_directory(directory_path, "output_wms")
+
+
 
     # configure logger:
     subprocess_log_file = os.path.join(output_wms_path, log_file)
@@ -841,17 +837,29 @@ def main(input):
         # Now merge the files after moving them
         print("Merging dop files...")
         try:
-            merge_files(dop_folder_path, base_filename, output_wms_path, batch_size=batch_size, file_type="dop")
+            merge_files(dop_folder_path, base_filename, output_wms_path,  file_type="dop", AOI=AOI, year=year)
             print("Dop files merged successfully.")
         except Exception as e:
             print(f"Failed to merge dop files: {e}")
 
         print("Merging meta files...")
         try:
-            merge_files(meta_folder_path, base_filename, output_wms_path, batch_size=batch_size, file_type="meta")
+            merge_files(meta_folder_path, base_filename, output_wms_path,  file_type="meta", AOI=AOI, year=year)
             print("Meta files merged successfully.")
         except Exception as e:
             print(f"Failed to merge meta files: {e}")
+
+        # Clean up temp VRT files
+        for subfolder in ["dop", "meta"]:
+            vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
+            if vrt_path.exists():
+                try:
+                    vrt_path.unlink()
+                    print(f" Deleted temporary VRT: {vrt_path}")
+                except Exception as e:
+                    print(f" Failed to delete {vrt_path}: {e}")
+            else:
+                print(f"No VRT found in {vrt_path}")
 
     endtime = time.time()
     sub_log.info("Execution time: %s seconds" % (endtime - starttime))
