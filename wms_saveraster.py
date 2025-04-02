@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May  15 12:00:00 2024
+
+@author: Admin
+"""
+
 import os
 from osgeo import ogr, gdal, osr
 from owslib.wms import WebMapService
@@ -211,7 +218,6 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
         sub_log.error("Layer 1: Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
 
     # extract ir image
-
     if layer2 != None and layer2 != "None" and layer2 != "nan":
         img2 = None
         try:
@@ -282,8 +288,6 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         pixel_height = (y_max - y_min) / tif_ds.RasterYSize
 
         # Set geotransformation
-        # [top left x, pixel width, 0, top left y, 0, pixel height (negative because origin is top left corner)]
-        # geo_transform = [extent[0], pixel_width, 0, extent[3], 0, -pixel_height]
         geo_transform = [x_min, pixel_width, 0, y_max, 0, -pixel_height]
         try:
             tif_ds.SetGeoTransform(geo_transform)
@@ -441,7 +445,18 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
             except:
                 sub_log.error("Cannot get acquisition date for file %s" % out_meta)
                 bildflug_date == 0
-            bildflug_array = np.full((int(round(x_max - x_min) / r_aufl), int(round(y_max - y_min) / r_aufl)), bildflug_date)
+
+            if img_width is not None and img_height is not None and r_aufl is not None:
+                cols = img_width
+                rows = img_height
+            else:
+                cols = int(round((x_max - x_min) / r_aufl))
+                rows = int(round((y_max - y_min) / r_aufl))
+
+            if rows <= 0 or cols <= 0:
+                raise ValueError(f"Invalid array shape: rows={rows}, cols={cols}")
+
+            bildflug_array = np.full((rows, cols), bildflug_date)
 
             try:
                 write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width, img_height, r_aufl)
@@ -450,7 +465,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
 
 
 def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
-                       y_max):
+                       y_max, seen_tiles):
     """Process each polygon of a file and handle WMS version selection."""
 
     sub_log.debug("Processing %s" % output_file_name)
@@ -519,17 +534,49 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         if meta_calc == True:
             output_wms_meta_path = func.create_directory(output_wms_path, "meta")
 
-        rangex = (x_max - x_min) / reduce_p_factor  # CHANGE TO 400 (tile size)
-        rangey = (y_max - y_min) / reduce_p_factor  # CHANGE TO 400 (tile size)
+        rangex = img_width * r_aufl
+        rangey = img_height * r_aufl
+
+        x_tile_count = math.ceil((x_max - x_min)/ rangex)
+        y_tile_count = math.ceil((y_max - y_min)/ rangey)
+
+        # Snap x_min to nearest multiple of rangex
+        tile_origin_x = math.floor(x_min / rangex) * rangex
+        # Snap y_max to nearest multiple of rangey
+        tile_origin_y = math.ceil(y_max / rangey) * rangey
 
         part = 0
 
         polygon_part_progress = tqdm(total=reduce_p_factor ** 2, desc='Processing partition of polygon', leave=False)
-        for x in list(range(reduce_p_factor)):
 
-            for y in list(range(reduce_p_factor)):
+        for row in list(range(y_tile_count)):
+
+            for col in list(range(x_tile_count)):
 
                 sub_log.debug("Processing partition: %s of file %s" % (part, output_file_name))
+
+                # Calculate exact bounding box without overlap
+                x_min_n = tile_origin_x + col * rangex
+                x_max_n = x_min_n + rangex
+
+                y_max_n = tile_origin_y - row * rangey
+                y_min_n = y_max_n - rangey
+
+                # Round coordinates to avoid floating point precision issues
+                rounded_bounds = (
+                    round(x_min_n, 4),
+                    round(y_min_n, 4),
+                    round(x_max_n, 4),
+                    round(y_max_n, 4),
+                )
+
+                # Skip if we've already processed this tile
+                if rounded_bounds in seen_tiles:
+                    sub_log.warning(f"Duplicate tile detected at {rounded_bounds}, skipping.")
+                    polygon_part_progress.update(1)
+                    continue
+
+                seen_tiles.add(rounded_bounds)
 
                 # check if file already exists
                 check_file_part_dop = os.path.join(output_wms_dop_path, output_file_name + "_" + str(part + 1) + ".tif")
@@ -541,13 +588,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                     part = part + 1
                     polygon_part_progress.update(1)
                     continue
-
-                # calculating extend of current partition
-                x_min_n = x_min + rangex * y
-                y_max_n = y_max - rangey * x
-
-                x_max_n = x_max - ((reduce_p_factor - 1) - y) * rangex
-                y_min_n = y_min + ((reduce_p_factor - 1) - x) * rangey
 
                 # Skip extracting image file if the part does not intersect with the polygon
                 try:
@@ -575,27 +615,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                         part, output_file_name_n))
                 polygon_part_progress.update(1)
 
-        print("Preparing to merge files...")
-        print(f"Output WMS path: {output_wms_path}")
-        print(f"Output folder path: {output_wms_path}")
-        print(f"Output file name: {output_file_name}")
-
-        if wms_calc == True:
-            # if merge_wms == True:
-            print(f"Creating directory at {output_wms_path}")
-            try:
-                # merge_files(output_wms_path, output_wms_dop_path, output_file_name, "dop")
-                merge_files(output_wms_path, output_wms_dop_path, output_file_name, file_type="dop")
-
-            except:
-                sub_log.error("Cannot merge dop files for %s" % output_file_name)
-        if meta_calc == True:
-            # if merge_wms == True:
-            try:
-                # merge_files(output_wms_path, output_wms_meta_path, output_file_name, "meta")
-                merge_files(output_wms_path, output_wms_meta_path, output_file_name,  file_type="meta")
-            except:
-                sub_log.error("Cannot merge meta files for %s" % output_file_name)
 
     else:
         # Processing without partitioning
@@ -617,11 +636,8 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
-
-
-
-
-
+# avoid dublicate tiles
+seen_tiles = set()
 def process_file(shapefile_path, output_wms_path):
     """Processes each file"""
 
@@ -677,7 +693,7 @@ def process_file(shapefile_path, output_wms_path):
 
 
         polygon_processing(geom, output_wms_path,  output_file_name_n, epsg_code, epsg_code_int, extent[0], extent[2],
-                           extent[1], extent[3])  # x_min, y_min, x_max, y_max
+                           extent[1], extent[3], seen_tiles)  # x_min, y_min, x_max, y_max
         polygon = polygon + 1
         polygon_progress.update(1)
 
