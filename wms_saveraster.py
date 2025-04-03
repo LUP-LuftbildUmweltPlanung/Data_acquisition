@@ -2,7 +2,7 @@
 """
 Created on Wed May  15 12:00:00 2024
 
-@author: Admin
+@author: Shadi
 """
 
 import os
@@ -537,8 +537,13 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         rangex = img_width * r_aufl
         rangey = img_height * r_aufl
 
-        x_tile_count = math.ceil((x_max - x_min)/ rangex)
-        y_tile_count = math.ceil((y_max - y_min)/ rangey)
+        # Snap to grid
+        tile_origin_x = math.floor(x_min / rangex) * rangex
+        tile_origin_y = math.ceil(y_max / rangey) * rangey
+
+        # Extend full coverage (ensure last tile overlaps if needed)
+        x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
+        y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
 
         # Snap x_min to nearest multiple of rangex
         tile_origin_x = math.floor(x_min / rangex) * rangex
@@ -572,7 +577,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
 
                 # Skip if we've already processed this tile
                 if rounded_bounds in seen_tiles:
-                    sub_log.warning(f"Duplicate tile detected at {rounded_bounds}, skipping.")
                     polygon_part_progress.update(1)
                     continue
 
@@ -748,8 +752,6 @@ def main(input):
         year = None
 
     output_wms_path = func.create_directory(directory_path, "output_wms")
-
-
 
     # configure logger:
     subprocess_log_file = os.path.join(output_wms_path, log_file)
