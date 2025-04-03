@@ -59,7 +59,7 @@ The different scripts correspond to different wms servers or geoportals between 
 
 ## Authors
 
-* Vera Sons
+* [Vera Sons](https://github.com/Unterwex)
 * [Benjamin Stöckigt](https://github.com/benjaminstoeckigt)
 * [Shadi Ghantous](https://github.com/Shadiouss)
 
