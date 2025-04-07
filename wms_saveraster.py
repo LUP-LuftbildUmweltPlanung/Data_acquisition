@@ -2,7 +2,7 @@
 """
 Created on Wed May  15 12:00:00 2024
 
-@author: Shadi
+@author: shadi
 """
 
 import os
@@ -541,14 +541,10 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         tile_origin_x = math.floor(x_min / rangex) * rangex
         tile_origin_y = math.ceil(y_max / rangey) * rangey
 
+
         # Extend full coverage (ensure last tile overlaps if needed)
         x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
         y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
-
-        # Snap x_min to nearest multiple of rangex
-        tile_origin_x = math.floor(x_min / rangex) * rangex
-        # Snap y_max to nearest multiple of rangey
-        tile_origin_y = math.ceil(y_max / rangey) * rangey
 
         part = 0
 
@@ -641,7 +637,9 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
 # avoid dublicate tiles
-seen_tiles = set()
+# seen_tiles = set()
+
+
 def process_file(shapefile_path, output_wms_path):
     """Processes each file"""
 
@@ -673,7 +671,14 @@ def process_file(shapefile_path, output_wms_path):
 
     polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
 
+    if merge:
+        seen_tiles = set()  # one shared set for all polygons
+
     for feature in inLayer:  # inLayer is always of size one because polygon is a unique value
+
+        if not merge:
+            seen_tiles = set()  # reset per polygon if no merge
+
         print("\nProcessing polygon: " + str(polygon+1) + "/" +str(len(inLayer)))
         geom = feature.GetGeometryRef()
         extent = geom.GetEnvelope()
