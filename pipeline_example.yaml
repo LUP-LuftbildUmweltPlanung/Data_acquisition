@@ -1,0 +1,100 @@
+  ############################################### KEEP THIS PART!!! ####################################################
+- index: 0    # KEEP THIS PART!!! Explanation of parameters, update index-value when adding new requests
+
+  ######### General: #########
+  log_file: "log1.txt"   # log file for the download of this wms request
+  directory_path: "your_directory\\"   # directory with the shape files that will be processed. output_dir = directory_path\\output_wms
+
+  ######### Tile settings: #########
+  r_aufl: 0.2   # spatial resolution of extracted tif files in meter (for image and meta)
+  img_height: null # The height of the downloaded tiles in pixel, set to null for maximum height
+  img_width: null # The width of the downloaded tiles in pixel, set to null for maximum height
+
+  ######### Image extraction: #########
+  wms_calc: false    # set to true if you want to extract raster data, false otherwise
+  wms_ad: ""    # wms web address for the image
+  layer: ""   # name of rgb layer in wms server
+  layer2: null    # name of layer with infrared as band 1 in wms server, set to null to skip
+  state: "None"   # set to "BB_history" if the data can only be extracted in png/jpeg format instead of tif (e.g. for the historic Brandenburg wms)
+
+  ######### Meta extraction: #########
+  meta_calc: false   # set to true if you want to extract metadata, false otherwise
+  wms_ad_meta: ""   # wms web address for the metadata
+  layer_meta: ""    # name of layer with acquisition dates in wms server of metadata
+
+  ######### Merging: #########
+  merge: false   # set to true if tiles should be merged to one big file for each shape file, false otherwise. Attention: Big files if polygons are big or far apart
+  AOI: null   # specify area of interest in name of merged meta and image files
+  year: null   # specify a year in name of merged meta and image files
+
+  ######################################################################################################################
+
+- index: 1
+  ######### General: #########
+  log_file: "log2.txt"
+  directory_path: "test_script3\\"
+  ######### Tile settings: #########
+  r_aufl: 0.2
+  img_height: 400
+  img_width: 400
+  ######### Image extraction: #########
+  wms_calc: true
+  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+  layer: "dop20_bebb_2019_2021_farbe"
+  layer2: null
+  state: "BB_history"
+  ######### Meta extraction: #########
+  meta_calc: false
+  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
+  layer_meta: "bb_dop-19-21_info"
+  ######### Merging: #########
+  merge: false
+  AOI: null
+  year: null
+
+- index: 2
+  ######### General: #########
+  log_file: "log2.txt"
+  directory_path: "test_script2\\"
+  ######### Tile settings: #########
+  r_aufl: 0.2
+  img_height: 500
+  img_width: 500
+  ######### Image extraction: #########
+  wms_calc: true
+  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+  layer: "dop20_bebb_2019_2021_farbe"
+  layer2: null
+  state: "BB_history"
+  ######### Meta extraction: #########
+  meta_calc: true
+  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
+  layer_meta: "bb_dop-19-21_info"
+  ######### Merging: #########
+  merge: true
+  AOI: null
+  year: null
+
+
+- index: 2
+  ######### General: #########
+  log_file: "log2.txt"
+  directory_path: "test_script4\\"
+  ######### Tile settings: #########
+  r_aufl: 0.2
+  img_height: null
+  img_width: null
+  ######### Image extraction: #########
+  wms_calc: true
+  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+  layer: "dop20_bebb_2019_2021_farbe"
+  layer2: null
+  state: "BB_history"
+  ######### Meta extraction: #########
+  meta_calc: true
+  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
+  layer_meta: "bb_dop-19-21_info"
+  ######### Merging: #########
+  merge: true
+  AOI: null
+  year: null
