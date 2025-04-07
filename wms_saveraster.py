@@ -561,10 +561,10 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                 sub_log.debug("Processing partition: %s of file %s" % (part, output_file_name))
 
                 # Calculate exact bounding box without overlap
-                x_min_n = tile_origin_x + col * rangex
+                x_min_n = x_min + col * rangex
                 x_max_n = x_min_n + rangex
 
-                y_max_n = tile_origin_y - row * rangey
+                y_max_n = y_max - row * rangey
                 y_min_n = y_max_n - rangey
 
                 # Round coordinates to avoid floating point precision issues
