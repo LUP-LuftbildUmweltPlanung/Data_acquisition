@@ -2,7 +2,7 @@
 """
 Created on Wed May  15 12:00:00 2024
 
-@author: shadi
+@author: Shadi
 """
 
 import os
@@ -636,75 +636,86 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
-# avoid dublicate tiles
-# seen_tiles = set()
-
-
 def process_file(shapefile_path, output_wms_path):
-    """Processes each file"""
+    """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
 
     shapefile_dir, shapefile_name = os.path.split(shapefile_path)
-
     output_file_name = shapefile_name
 
-
-    #Get polygon extends and ESPG code from shape file
+    # Load shapefile
     inDriver = ogr.GetDriverByName("ESRI Shapefile")
     inDataSource = inDriver.Open(shapefile_path, 1)
     inLayer = inDataSource.GetLayer()
 
-    # Get the EPSG code
+    # Get EPSG
     spatialRef = inLayer.GetSpatialRef()
     if spatialRef is not None:
         epsg_code = spatialRef.GetAuthorityCode(None)
         epsg_code_int = int(epsg_code)
         epsg_code = "EPSG:" + epsg_code
     else:
-        sub_log.info("No spatial reference found, assuming EPSG: 25833")
+        sub_log.info("No spatial reference found, assuming EPSG:25833")
         epsg_code_int = 25833
         epsg_code = "EPSG:25833"
 
-
-    polygon = 0
-
-    polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
-
     if merge:
-        seen_tiles = set()  # one shared set for all polygons
+        print("🧩 Merging mode enabled: using full shapefile extent")
+        seen_tiles = set()
 
-    for feature in inLayer:  # inLayer is always of size one because polygon is a unique value
+        # Union all polygons to get the full extent
+        full_geom = None
+        x_min, y_min, x_max, y_max = None, None, None, None
 
-        if not merge:
-            seen_tiles = set()  # reset per polygon if no merge
+        for i, feature in enumerate(inLayer):
+            geom = feature.GetGeometryRef().Clone()
+            extent = geom.GetEnvelope()
 
-        print("\nProcessing polygon: " + str(polygon+1) + "/" +str(len(inLayer)))
-        geom = feature.GetGeometryRef()
-        extent = geom.GetEnvelope()
+            # Update bounds
+            if x_min is None:
+                x_min, y_min, x_max, y_max = extent[0], extent[2], extent[1], extent[3]
+            else:
+                x_min = min(x_min, extent[0])
+                y_min = min(y_min, extent[2])
+                x_max = max(x_max, extent[1])
+                y_max = max(y_max, extent[3])
 
-        if state == "BB_history": # XXXXX IS THAT GENERALLY NECESSARY??? ARE THESE TRANSFORMATIONS UNIVERSAL??? XXXXXX
-            if polygon == 0:
-                polygon_code = 60
-            elif polygon == 1:
-                polygon_code = 65
-            elif polygon == 2:
-                polygon_code = 75
-            elif polygon == 3:
-                polygon_code = 82
-            elif polygon == 4:
-                polygon_code = 83
+            # Combine geometries
+            if full_geom is None:
+                full_geom = geom
+            else:
+                full_geom = full_geom.Union(geom)
 
-            years = "hist-" + layer_meta.split("_")[1].split("-",1)[1]  # sth like "dop-19-21"
-            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon_code) + "_" + years
-        else:
-            output_file_name_n = output_file_name.split(".")[0] + "_" + str(polygon)
+        output_file_name_n = output_file_name.split(".")[0] + "_merged"
 
+        polygon_processing(full_geom, output_wms_path, output_file_name_n,
+                           epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
 
-        polygon_processing(geom, output_wms_path,  output_file_name_n, epsg_code, epsg_code_int, extent[0], extent[2],
-                           extent[1], extent[3], seen_tiles)  # x_min, y_min, x_max, y_max
-        polygon = polygon + 1
-        polygon_progress.update(1)
+    else:
+        polygon = 0
+        polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
+
+        for feature in inLayer:
+            seen_tiles = set()  # reset per polygon
+
+            print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+            geom = feature.GetGeometryRef()
+            extent = geom.GetEnvelope()
+
+            if state == "BB_history":
+                polygon_code_map = {0: 60, 1: 65, 2: 75, 3: 82, 4: 83}
+                polygon_code = polygon_code_map.get(polygon, polygon)
+                years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
+                output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon_code}_{years}"
+            else:
+                output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
+
+            polygon_processing(geom, output_wms_path, output_file_name_n,
+                               epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
+
+            polygon += 1
+            polygon_progress.update(1)
 
 
 
