@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May  15 12:00:00 2024
-
-@author: Shadi
-"""
-
 import os
 from osgeo import ogr, gdal, osr
 from owslib.wms import WebMapService
