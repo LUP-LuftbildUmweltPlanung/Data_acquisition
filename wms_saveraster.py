@@ -10,6 +10,7 @@ from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
 from pathlib import Path
+
 # adjusted
 """
 First function: Relies on provided x_min, y_min, x_max, and y_max to set up the raster's extent and resolution.
@@ -629,7 +630,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
-def process_file(shapefile_path, output_wms_path):
+def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
@@ -654,7 +655,7 @@ def process_file(shapefile_path, output_wms_path):
         epsg_code = "EPSG:25833"
 
     if merge:
-        print("🧩 Merging mode enabled: using full shapefile extent")
+        print("Merging mode enabled: using full shapefile extent")
         seen_tiles = set()
 
         # Union all polygons to get the full extent
@@ -684,6 +685,25 @@ def process_file(shapefile_path, output_wms_path):
 
         polygon_processing(full_geom, output_wms_path, output_file_name_n,
                            epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
+
+        # 👇 ADD HERE
+        base_filename = os.path.splitext(shapefile_name)[0]
+        dop_folder_path = os.path.join(output_wms_path, "dop")
+        meta_folder_path = os.path.join(output_wms_path, "meta")
+
+        try:
+            print(f" Merging DOP for shapefile: {base_filename}")
+            merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
+            print(" DOP merge done.")
+        except Exception as e:
+            print(f" Failed to merge DOP for {base_filename}: {e}")
+
+        try:
+            print(f" Merging META for shapefile: {base_filename}")
+            merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
+            print(" META merge done.")
+        except Exception as e:
+            print(f" Failed to merge META for {base_filename}: {e}")
 
     else:
         polygon = 0
@@ -807,57 +827,34 @@ def main(input):
                 # Check if it's a file and not a directory (optional, depending on your needs)
                 if os.path.isfile(file_path):
                     print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-                    process_file(file_path, output_wms_path)
+                    process_file(file_path, output_wms_path, AOI=AOI, year=year)
                     print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
 
                     counter = counter + 1
 
         # Move files to the dop and meta folders
         for file in os.listdir(output_wms_path):
-            if file.endswith(".tif") and "_meta" not in file:
+            if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file:
                 os.rename(os.path.join(output_wms_path, file), os.path.join(dop_folder_path, file))
-            elif file.endswith("_meta.tif"):
+            elif file.endswith("_meta.tif") and "_merged" not in file:
                 os.rename(os.path.join(output_wms_path, file), os.path.join(meta_folder_path, file))
 
         # After moving files to the dop and meta folders
         print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
         print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
-    if merge:
-        # Automatically determine the output filename from the processed shapefiles
-        shapefile_list = [f for f in os.listdir(directory_path) if f.endswith(".shp")]
-        if shapefile_list:
-            base_filename = os.path.splitext(shapefile_list[0])[0]  # Get the first shapefile name (without extension)
-        else:
-            base_filename = "merged_output"  # Default fallback
-
-        print(f"Using base filename for merging: {base_filename}")
-
-        # Now merge the files after moving them
-        print("Merging dop files...")
-        try:
-            merge_files(dop_folder_path, base_filename, output_wms_path,  file_type="dop", AOI=AOI, year=year)
-            print("Dop files merged successfully.")
-        except Exception as e:
-            print(f"Failed to merge dop files: {e}")
-
-        print("Merging meta files...")
-        try:
-            merge_files(meta_folder_path, base_filename, output_wms_path,  file_type="meta", AOI=AOI, year=year)
-            print("Meta files merged successfully.")
-        except Exception as e:
-            print(f"Failed to merge meta files: {e}")
 
         # Clean up temp VRT files
-        for subfolder in ["dop", "meta"]:
-            vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
-            if vrt_path.exists():
-                try:
-                    vrt_path.unlink()
-                    print(f" Deleted temporary VRT: {vrt_path}")
-                except Exception as e:
-                    print(f" Failed to delete {vrt_path}: {e}")
-            else:
-                print(f"No VRT found in {vrt_path}")
+    for subfolder in ["dop", "meta"]:
+        vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
+        if vrt_path.exists():
+            try:
+                vrt_path.unlink()
+                print(f" Deleted temporary VRT: {vrt_path}")
+            except Exception as e:
+                print(f" Failed to delete {vrt_path}: {e}")
+        else:
+            print(f"No VRT found in {vrt_path}")
+
 
     endtime = time.time()
     sub_log.info("Execution time: %s seconds" % (endtime - starttime))
