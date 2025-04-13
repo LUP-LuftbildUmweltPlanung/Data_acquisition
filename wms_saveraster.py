@@ -10,7 +10,6 @@ from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
 from pathlib import Path
-
 # adjusted
 """
 First function: Relies on provided x_min, y_min, x_max, and y_max to set up the raster's extent and resolution.
@@ -457,6 +456,17 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
             except:
                 sub_log.error("Cannot write meta raster data for %s" % output_file_name)
 
+def try_connect_wms(url, versions):
+    """Attempt to connect to a WMS server using multiple versions and return the successful one."""
+    for version in versions:
+        try:
+            wms_service = WebMapService(url, version=version, timeout=120, parse_remote_metadata=True)
+            if wms_service.contents:  # Check if layers are available
+                print(f"Successfully connected to WMS: {url} using version {version}")
+                return wms_service, version
+        except Exception as e:
+            sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
+    return None, None  # If all attempts fail
 
 def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
                        y_max, seen_tiles):
@@ -467,155 +477,114 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
 
-    # Initialize variables
-    wms = None
-    wms_meta = None
-    wms_version_used = None
-    wms_meta_version_used = None
+    wms, wms_meta = None, None
+    wms_version_used, wms_meta_version_used = None, None
 
-    def try_connect_wms(url, versions):
-        """Attempt to connect to a WMS server using multiple versions and return the successful one."""
-        for version in versions:
-            try:
-                wms_service = WebMapService(url, version=version, timeout=120, parse_remote_metadata=True)
-                if wms_service.contents:  # Check if layers are available
-                    print(f"Successfully connected to WMS: {url} using version {version}")
-                    return wms_service, version
-            except Exception as e:
-                sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
-        return None, None  # If all attempts fail
-
-    # Try connecting to WMS for dop (aerial images)
     if wms_calc:
         wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
         if wms is None:
             sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
 
-    # Try connecting to WMS for meta (metadata layers)
     if meta_calc:
         wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
         if wms_meta is None:
             sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
 
-    # Print which versions were used
     if wms_version_used:
-        print(f"📡 Data was downloaded using WMS version: {wms_version_used}")
-        sub_log.info(f"Data was downloaded using WMS version: {wms_version_used}")
-
+        print(f"📱 Data will download using WMS version: {wms_version_used}")
     if wms_meta_version_used:
-        print(f"📡 Meta data was downloaded using WMS version: {wms_meta_version_used}")
-        sub_log.info(f"Meta data was downloaded using WMS version: {wms_meta_version_used}")
-    # Calculation
-    if reduce_p_factor > 1:
-        sub_log.debug("Extracting raster data from %s" % output_file_name)
-        print("Extracting raster data from wms (" + str(reduce_p_factor ** 2) + " parts) ...")
+        print(f"📱 Meta data will download using WMS version: {wms_meta_version_used}")
 
-        # check if file already exists
+    if reduce_p_factor > 1:
+        print(f"Extracting raster data from wms ({reduce_p_factor ** 2} parts) ...")
+
         check_file_dop = os.path.join(output_wms_path, output_file_name + "_merged.tif")
-        check_file_meta = os.path.join(output_wms_path,
-                                       output_file_name + "_meta_merged.tif")
+        check_file_meta = os.path.join(output_wms_path, output_file_name + "_meta_merged.tif")
         if (os.path.isfile(check_file_dop) or not wms_calc) and (os.path.isfile(check_file_meta) or not meta_calc):
             sub_log.info("Merged dop or meta for file %s already exist and calculation is skipped." % output_file_name)
             return
 
-        # Create dop and meta directories:
-        output_wms_dop_path = output_wms_path
-        output_wms_meta_path = output_wms_path
+        output_wms_dop_path = func.create_directory(output_wms_path, "dop") if wms_calc else output_wms_path
+        output_wms_meta_path = func.create_directory(output_wms_path, "meta") if meta_calc else output_wms_path
 
-        if wms_calc == True:
-            output_wms_dop_path = func.create_directory(output_wms_path, "dop")
+        if merge and img_width and img_height:
+            rangex = img_width * r_aufl
+            rangey = img_height * r_aufl
 
-        if meta_calc == True:
-            output_wms_meta_path = func.create_directory(output_wms_path, "meta")
+            tile_origin_x = math.floor(x_min / rangex) * rangex
+            tile_origin_y = math.ceil(y_max / rangey) * rangey
 
-        rangex = img_width * r_aufl
-        rangey = img_height * r_aufl
-
-        # Snap to grid
-        tile_origin_x = math.floor(x_min / rangex) * rangex
-        tile_origin_y = math.ceil(y_max / rangey) * rangey
-
-
-        # Extend full coverage (ensure last tile overlaps if needed)
-        x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
-        y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
+            x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
+            y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
+        else:
+            rangex = (x_max - x_min) / reduce_p_factor
+            rangey = (y_max - y_min) / reduce_p_factor
+            tile_origin_x = x_min
+            tile_origin_y = y_max
+            x_tile_count = reduce_p_factor
+            y_tile_count = reduce_p_factor
 
         part = 0
+        polygon_part_progress = tqdm(total=x_tile_count * y_tile_count, desc='Processing partition of polygon', leave=False)
 
-        polygon_part_progress = tqdm(total=reduce_p_factor ** 2, desc='Processing partition of polygon', leave=False)
-
-        for row in list(range(y_tile_count)):
-
-            for col in list(range(x_tile_count)):
-
+        for x in range(y_tile_count):
+            for y in range(x_tile_count):
                 sub_log.debug("Processing partition: %s of file %s" % (part, output_file_name))
 
-                # Calculate exact bounding box without overlap
-                x_min_n = x_min + col * rangex
+                x_min_n = tile_origin_x + y * rangex
                 x_max_n = x_min_n + rangex
-
-                y_max_n = y_max - row * rangey
+                y_max_n = tile_origin_y - x * rangey
                 y_min_n = y_max_n - rangey
 
-                # Round coordinates to avoid floating point precision issues
-                rounded_bounds = (
-                    round(x_min_n, 4),
-                    round(y_min_n, 4),
-                    round(x_max_n, 4),
-                    round(y_max_n, 4),
-                )
-
-                # Skip if we've already processed this tile
+                rounded_bounds = (round(x_min_n, 4), round(y_min_n, 4), round(x_max_n, 4), round(y_max_n, 4))
                 if rounded_bounds in seen_tiles:
                     polygon_part_progress.update(1)
                     continue
-
                 seen_tiles.add(rounded_bounds)
 
-                # check if file already exists
-                check_file_part_dop = os.path.join(output_wms_dop_path, output_file_name + "_" + str(part + 1) + ".tif")
-                check_file_part_meta = os.path.join(output_wms_meta_path,
-                                                    output_file_name + "_" + str(part + 1) + "_meta.tif")
-                if (os.path.isfile(check_file_part_dop) or not wms_calc) and (
-                        os.path.isfile(check_file_part_meta) or not meta_calc):
-                    sub_log.info("Dop or meta for file %s already exist and calculation is skipped." % output_file_name)
-                    part = part + 1
+                check_file_part_dop = os.path.join(output_wms_dop_path, output_file_name + f"_{part + 1}.tif")
+                check_file_part_meta = os.path.join(output_wms_meta_path, output_file_name + f"_{part + 1}_meta.tif")
+                if (os.path.isfile(check_file_part_dop) or not wms_calc) and (os.path.isfile(check_file_part_meta) or not meta_calc):
+                    part += 1
                     polygon_part_progress.update(1)
                     continue
 
-                # Skip extracting image file if the part does not intersect with the polygon
                 try:
                     check_intersect = func.polygon_partition_intersect(geom, x_min_n, y_min_n, x_max_n, y_max_n)
+                    if not check_intersect:
+                        polygon_part_progress.update(1)
+                        continue
                 except:
                     sub_log.error("Cannot check intersection for %s" % output_file_name)
 
-                if check_intersect == False:
-                    sub_log.debug("Skipping partition without intersection %s" % output_file_name)
-                    polygon_part_progress.update(1)
-                    continue
-
-                part = part + 1
-
-                output_file_name_n = output_file_name + "_" + str(part) + ".tif"
-
+                part += 1
+                output_file_name_n = output_file_name + f"_{part}.tif"
                 try:
                     extract_raster_data_process(output_wms_dop_path, output_file_name_n, wms, epsg_code, epsg_code_int,
                                                 x_min_n, y_min_n, x_max_n, y_max_n, "wms")
-                    extract_raster_data_process(output_wms_meta_path, output_file_name_n,
-                                                wms_meta, epsg_code, epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n,
-                                                "meta")
+                    extract_raster_data_process(output_wms_meta_path, output_file_name_n, wms_meta, epsg_code,
+                                                epsg_code_int, x_min_n, y_min_n, x_max_n, y_max_n, "meta")
                 except:
-                    sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (
-                        part, output_file_name_n))
+                    sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (part, output_file_name_n))
                 polygon_part_progress.update(1)
 
+        if wms_calc:
+            try:
+                merge_files(output_wms_dop_path, output_file_name, output_wms_path, "dop")
+            except:
+                sub_log.error("Cannot merge dop files for %s" % output_file_name)
+        if meta_calc:
+            try:
+                merge_files(output_wms_meta_path, output_file_name, output_wms_path, "meta")
+            except:
+                sub_log.error("Cannot merge meta files for %s" % output_file_name)
+
+        polygon_part_progress.close()
 
     else:
-        # Processing without partitioning
         sub_log.debug("Processing %s without partitioning" % output_file_name)
         output_file_name_n = output_file_name + ".tif"
 
-        # check if file already exists
         check_file_dop = os.path.join(output_wms_path, output_file_name_n)
         check_file_meta = os.path.join(output_wms_path, output_file_name + "_meta.tif")
         if (os.path.isfile(check_file_dop) or not wms_calc) and (os.path.isfile(check_file_meta) or not meta_calc):
@@ -629,7 +598,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                                         epsg_code_int, x_min, y_min, x_max, y_max, "meta")
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
-
 def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
@@ -655,7 +623,7 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
         epsg_code = "EPSG:25833"
 
     if merge:
-        print("Merging mode enabled: using full shapefile extent")
+        print(" Merging mode enabled: using full shapefile extent")
         seen_tiles = set()
 
         # Union all polygons to get the full extent
@@ -686,13 +654,13 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
         polygon_processing(full_geom, output_wms_path, output_file_name_n,
                            epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
 
-        # 👇 ADD HERE
+        # ADD HERE
         base_filename = os.path.splitext(shapefile_name)[0]
         dop_folder_path = os.path.join(output_wms_path, "dop")
         meta_folder_path = os.path.join(output_wms_path, "meta")
 
         try:
-            print(f" Merging DOP for shapefile: {base_filename}")
+            print(f"Merging DOP for shapefile: {base_filename}")
             merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
             print(" DOP merge done.")
         except Exception as e:
@@ -704,7 +672,6 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             print(" META merge done.")
         except Exception as e:
             print(f" Failed to merge META for {base_filename}: {e}")
-
     else:
         polygon = 0
         polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
@@ -843,7 +810,7 @@ def main(input):
         print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
         print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
 
-        # Clean up temp VRT files
+    # Clean up temp VRT files
     for subfolder in ["dop", "meta"]:
         vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
         if vrt_path.exists():
