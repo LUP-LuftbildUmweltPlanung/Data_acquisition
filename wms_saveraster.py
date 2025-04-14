@@ -351,10 +351,17 @@ def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AO
     """
     print("Starting merge...")
 
-    # File pattern based on type
-    pattern = "*_meta.tif" if file_type == "meta" else "*.tif"
+    # File pattern based on shapefile name and type
+    if file_type == "meta":
+        pattern = f"{output_file_name}_*_meta.tif"
+    else:
+        pattern = f"{output_file_name}_*.tif"
+
     input_files = glob.glob(os.path.join(input_dir, pattern))
-    input_files = [f for f in input_files if not f.endswith(".ovr")]
+
+    # Filter out overviews and accidentally merged files
+    input_files = [f for f in input_files if not f.endswith(".ovr") and "_merged" not in f]
+
 
     if not input_files:
         raise FileNotFoundError(f"No TIFFs found in {input_dir} for type '{file_type}'")
@@ -568,17 +575,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                     sub_log.error("Cannot run process function to extract raster data of partition %s for %s" % (part, output_file_name_n))
                 polygon_part_progress.update(1)
 
-        if wms_calc:
-            try:
-                merge_files(output_wms_dop_path, output_file_name, output_wms_path, "dop")
-            except:
-                sub_log.error("Cannot merge dop files for %s" % output_file_name)
-        if meta_calc:
-            try:
-                merge_files(output_wms_meta_path, output_file_name, output_wms_path, "meta")
-            except:
-                sub_log.error("Cannot merge meta files for %s" % output_file_name)
-
         polygon_part_progress.close()
 
     else:
@@ -649,13 +645,14 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             else:
                 full_geom = full_geom.Union(geom)
 
-        output_file_name_n = output_file_name.split(".")[0] + "_merged"
+        output_file_name_n = output_file_name.split(".")[0]
 
         polygon_processing(full_geom, output_wms_path, output_file_name_n,
                            epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
 
         # ADD HERE
-        base_filename = os.path.splitext(shapefile_name)[0]
+        #base_filename = os.path.splitext(shapefile_name)[0]
+        base_filename = output_file_name_n
         dop_folder_path = os.path.join(output_wms_path, "dop")
         meta_folder_path = os.path.join(output_wms_path, "meta")
 
@@ -809,6 +806,7 @@ def main(input):
         # After moving files to the dop and meta folders
         print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
         print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
+
 
     # Clean up temp VRT files
     for subfolder in ["dop", "meta"]:
