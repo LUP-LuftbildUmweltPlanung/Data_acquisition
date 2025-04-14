@@ -796,12 +796,18 @@ def main(input):
                     print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
 
                     counter = counter + 1
-
-        # Move files to the dop and meta folders
+                    
+        # Move files to the dop and meta folders, but skip those with only one tile
         for file in os.listdir(output_wms_path):
+            # Skip merged files and already processed/moved standalone files
             if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file:
+                if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+                    continue  # It's a single standalone file don't move back
                 os.rename(os.path.join(output_wms_path, file), os.path.join(dop_folder_path, file))
+
             elif file.endswith("_meta.tif") and "_merged" not in file:
+                if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+                    continue  # Same skip for single meta tiles
                 os.rename(os.path.join(output_wms_path, file), os.path.join(meta_folder_path, file))
 
         # After moving files to the dop and meta folders
