@@ -498,9 +498,9 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
 
     if wms_version_used:
-        print(f"📱 Data will download using WMS version: {wms_version_used}")
+        print(f" Data will download using WMS version: {wms_version_used}")
     if wms_meta_version_used:
-        print(f"📱 Meta data will download using WMS version: {wms_meta_version_used}")
+        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
 
     if reduce_p_factor > 1:
         print(f"Extracting raster data from wms ({reduce_p_factor ** 2} parts) ...")
@@ -514,22 +514,23 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
         output_wms_dop_path = func.create_directory(output_wms_path, "dop") if wms_calc else output_wms_path
         output_wms_meta_path = func.create_directory(output_wms_path, "meta") if meta_calc else output_wms_path
 
-        if merge and img_width and img_height:
-            rangex = img_width * r_aufl
-            rangey = img_height * r_aufl
+        rangex = img_width * r_aufl if img_width else (x_max - x_min) / reduce_p_factor
+        rangey = img_height * r_aufl if img_height else (y_max - y_min) / reduce_p_factor
 
+        if merge:
+            # Use global tile origin aligned to grid
             tile_origin_x = math.floor(x_min / rangex) * rangex
             tile_origin_y = math.ceil(y_max / rangey) * rangey
 
             x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
             y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
         else:
-            rangex = (x_max - x_min) / reduce_p_factor
-            rangey = (y_max - y_min) / reduce_p_factor
+            # Each polygon starts from its own local extent
             tile_origin_x = x_min
             tile_origin_y = y_max
-            x_tile_count = reduce_p_factor
-            y_tile_count = reduce_p_factor
+
+            x_tile_count = math.ceil((x_max - x_min) / rangex)
+            y_tile_count = math.ceil((y_max - y_min) / rangey)
 
         part = 0
         polygon_part_progress = tqdm(total=x_tile_count * y_tile_count, desc='Processing partition of polygon', leave=False)
@@ -543,7 +544,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                 y_max_n = tile_origin_y - x * rangey
                 y_min_n = y_max_n - rangey
 
-                rounded_bounds = (round(x_min_n, 4), round(y_min_n, 4), round(x_max_n, 4), round(y_max_n, 4))
+                rounded_bounds = (round(x_min_n, 2), round(y_min_n, 2), round(x_max_n, 2), round(y_max_n, 2))
                 if rounded_bounds in seen_tiles:
                     polygon_part_progress.update(1)
                     continue
