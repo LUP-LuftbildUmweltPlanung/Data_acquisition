@@ -519,8 +519,8 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
 
         if merge:
             # Use global tile origin aligned to grid
-            tile_origin_x = math.floor(x_min / rangex) * rangex
-            tile_origin_y = math.ceil(y_max / rangey) * rangey
+            tile_origin_x = x_min
+            tile_origin_y = y_max
 
             x_tile_count = math.ceil((x_max - tile_origin_x) / rangex)
             y_tile_count = math.ceil((tile_origin_y - y_min) / rangey)
