@@ -10,11 +10,8 @@ from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
 from pathlib import Path
-# adjusted
-"""
-First function: Relies on provided x_min, y_min, x_max, and y_max to set up the raster's extent and resolution.
-Second function: Uses a fixed tile size (img_width and img_height) and resolution (r_aufl) to determine the extent (x_max, y_max) and the geotransform.
-"""
+
+
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
     """Creates a raster file with one band that contains the acquisition date of every pixel"""
     if img_width is not None and img_height is not None and r_aufl is not None:
@@ -66,11 +63,6 @@ def get_max_image_size():
 
     return int(maxwidth),int(maxheight)
 
-# adjusted
-"""
-First function: Uses maxwidth and maxheight to determine the maximum allowable tile size, with default values of 1 if either is None.
-Second function: Uses img_width and img_height to directly specify the desired image size for each tile.
-"""
 def calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width=None, img_height=None, maxwidth=None, maxheight=None):
     """Calculate the p-factor: into how many pieces the given extent has to be partitioned for calculation based on the desired image size."""
     # Calculate the extent in x and y directions
@@ -140,9 +132,6 @@ def merge_raster_bands(rgb, ir, output_file_path):
             band_data = ir_ds.GetRasterBand(1).ReadAsArray()
         output_ds.GetRasterBand(i).WriteArray(band_data)
 
-    # Close datasets to flush to disk
-    # Remove the temporary files
-
     sub_log.debug(f"Output dataset size: {output_ds.RasterXSize} x {output_ds.RasterYSize} x {output_ds.RasterCount}")
 
     output_ds = None
@@ -152,38 +141,6 @@ def merge_raster_bands(rgb, ir, output_file_path):
     os.remove(rgb_path)
     os.remove(ir_path)
 
-# New Function
-"""
-Applies proper geotransform based on the given spatial extent, ensuring each pixel corresponds to a real-world location.
-"""
-def apply_georeferencing(file_path, x_min, y_min, x_max, y_max, epsg_code):
-    """Force georeferencing on the downloaded TIFF file."""
-
-    ds = gdal.Open(file_path, gdal.GA_Update)
-    if ds is None:
-        print(f"Cannot open file for georeferencing: {file_path}")
-        return
-
-    # Apply projection (CRS)
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(int(epsg_code.split(":")[1]))  # Extract EPSG code
-    ds.SetProjection(srs.ExportToWkt())
-
-    # Apply geotransform (spatial extent)
-    pixel_width = (x_max - x_min) / ds.RasterXSize
-    pixel_height = (y_max - y_min) / ds.RasterYSize
-    geotransform = (x_min, pixel_width, 0, y_max, 0, -pixel_height)
-    ds.SetGeoTransform(geotransform)
-
-    ds = None  # Save and close
-    print(f"Georeferencing applied to {file_path}")
-
-# Adjusted
-"""
-Dynamic Calculation of x_max and y_max: The new version dynamically calculates these based on tile size, while the first version uses the values passed directly to the function.
-Fixed Image Size for WMS Requests: In the new version, the WMS image size is fixed to img_width and img_height, while the previous version adjusts the image size based on the bounding box and resolution.
-Georeferencing: The new version includes an extra step to apply georeferencing to the output file after it has been saved, ensuring the TIFF is correctly aligned spatially, while the previous version does not.
-"""
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, img_width, img_height, r_aufl):
 
     """Get image data for a specified frame and write it into tif file"""
@@ -243,8 +200,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             out.close()
         except:
             sub_log.error("Could not write data to file %s." % output_file_path)
-            # Force georeferencing on the saved TIFF
-    apply_georeferencing(output_file_path, x_min, y_min, x_max, y_max, epsg_code)
+
 
 
 def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
@@ -293,11 +249,6 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         print("Failed to open the TIFF file %s." %output_file_path)
 
 
-# new
-"""
-Extracts the spatial extent (bounding box) of a given TIFF file using GDAL.
-This is crucial for sorting and merging because it allows the script to determine the spatial order of the raster tiles.
-"""
 def get_tile_bounds(file_path):
     """Extract bounding box from a single TIFF file."""
     ds = gdal.Open(file_path)
@@ -309,11 +260,6 @@ def get_tile_bounds(file_path):
     ds = None
     return (min_x, min_y, max_x, max_y)
 
-# New
-"""
-Sorts the list of raster files based on their spatial location (min_x, min_y).
-Ensures that tiles are processed in an order that minimizes spatial discontinuities, leading to better merging performance and reducing artifacts.
-"""
 def sort_files_by_spatial_proximity(input_files):
     """Sort files based on their spatial proximity."""
     tile_bounds = [(f, get_tile_bounds(f)) for f in input_files]
@@ -321,14 +267,6 @@ def sort_files_by_spatial_proximity(input_files):
     sorted_files = sorted(tile_bounds, key=lambda x: (x[1][0], x[1][1]))
     return [f[0] for f in sorted_files]
 
-
-# Adjust
-"""
-They improve efficiency when handling large raster datasets by ensuring a structured merging approach.
-Ensures that the final output file has correct spatial alignment, which is critical for accurate visualization in GIS and WMS applications.
-Helps prevent issues like gaps or overlaps between tiles when merging large geospatial datasets.
-"""
-# extract NoData from the first input tile
 def get_nodata_from_raster(raster_path):
     ds = gdal.Open(raster_path)
     if ds is not None and ds.GetRasterBand(1) is not None:
@@ -399,7 +337,6 @@ def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AO
     # Translate to final output
     gdal.Translate(final_output_file, vrt, options=translate_options)
     print(f" Merged output saved at {final_output_file}")
-
 
 def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type):
     """Call several functions to get raster data for dop and meta files"""
@@ -519,6 +456,8 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
 
         if merge:
             # Use global tile origin aligned to grid
+            # tile_origin_x = math.floor(x_min / rangex) * rangex
+            # tile_origin_y = math.ceil(y_max / rangey) * rangey
             tile_origin_x = x_min
             tile_origin_y = y_max
 
@@ -595,6 +534,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                                         epsg_code_int, x_min, y_min, x_max, y_max, "meta")
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
+            
 def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
@@ -670,6 +610,7 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             print(" META merge done.")
         except Exception as e:
             print(f" Failed to merge META for {base_filename}: {e}")
+
     else:
         polygon = 0
         polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
@@ -694,7 +635,6 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
             polygon += 1
             polygon_progress.update(1)
-
 
 
 def main(input):
@@ -731,8 +671,8 @@ def main(input):
     wms_ad_meta = str(input['wms_ad_meta'])
     layer_meta = str(input['layer_meta'])
     meta_calc = input['meta_calc']
-    img_width = input["img_width"]  # new
-    img_height = input["img_height"]  # new
+    img_width = input["img_width"]  
+    img_height = input["img_height"]  
     AOI = input.get("AOI", None)
     year = str(input.get("year", None))  # already present, just make sure it's str
     merge = input["merge"]
@@ -796,8 +736,8 @@ def main(input):
                     print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
 
                     counter = counter + 1
-                    
-        # Move files to the dop and meta folders, but skip those with only one tile
+
+        # Move files to the dop and meta folders
         for file in os.listdir(output_wms_path):
             # Skip merged files and already processed/moved standalone files
             if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file:
@@ -814,7 +754,6 @@ def main(input):
         print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
         print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
 
-
     # Clean up temp VRT files
     for subfolder in ["dop", "meta"]:
         vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
@@ -826,7 +765,6 @@ def main(input):
                 print(f" Failed to delete {vrt_path}: {e}")
         else:
             print(f"No VRT found in {vrt_path}")
-
 
     endtime = time.time()
     sub_log.info("Execution time: %s seconds" % (endtime - starttime))
