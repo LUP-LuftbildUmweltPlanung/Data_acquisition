@@ -29,7 +29,7 @@ The different scripts correspond to different wms servers or geoportals between 
 * Create a directory and place the shape files you want to use for the data acquisition in it
 * Open the program file you want to work with
 * To run multiple WMS requests, define each configuration in a YAML file like this:
-<pre> ```yaml # - index: 0  # Explanation row - update index for each new config
+<pre> - index: 0  # Explanation row - update index for each new config
 
   ######### General #########
   log_file: "log1.txt"
@@ -91,7 +91,7 @@ The different scripts correspond to different wms servers or geoportals between 
   layer_meta: "bb_dop-19-21_info"
   merge: true
   AOI: null
-  year: null ``` </pre>
+  year: null </pre>
  * Notes
     * Each entry starts with an index, which should be unique.
     * directory_path points to the folder containing your shapefiles.
