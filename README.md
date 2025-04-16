@@ -32,39 +32,31 @@ The different scripts correspond to different wms servers or geoportals between 
 <pre> - index: 0  # Explanation row - update index for each new config
 
   ######### General #########
-  log_file: "log1.txt"
-  directory_path: "your_directory\\"
+  log_file: "log1.txt"   # log file for the download of this wms request
+  directory_path: "your_directory\\"  # directory with the shape files that will be processed. output_dir = directory_path\\output_wms
 
   ######### Tile settings #########
-  r_aufl: 0.2
-  img_height: null
-  img_width: null
+  r_aufl: 0.2   # spatial resolution of extracted tif files in meter (for image and meta)
+  img_height: null # The height of the downloaded tiles in pixel, set to null for maximum height
+  img_width: null # The width of the downloaded tiles in pixel, set to null for maximum height
 
   ######### Image extraction #########
-  wms_calc: false
-  wms_ad: ""
-  layer: ""
-  layer2: null
-  state: "None"
+  wms_calc: false    # set to true if you want to extract raster data, false otherwise
+  wms_ad: ""    # wms web address for the image
+  layer: ""   # name of rgb layer in wms server
+  layer2: null    # name of layer with infrared as band 1 in wms server, set to null to skip
+  state: "None"   # set to "BB_history" if the data can only be extracted in png/jpeg format instead of tif (e.g. for the historic Brandenburg wms)
 
   ######### Meta extraction #########
-  meta_calc: false
-  wms_ad_meta: ""
-  layer_meta: ""
+  meta_calc: false   # set to true if you want to extract metadata, false otherwise
+  wms_ad_meta: ""   # wms web address for the metadata
+  layer_meta: ""    # name of layer with acquisition dates in wms server of metadata
 
   ######### Merging #########
-  merge: false
-  AOI: null
-  year: null </pre>
- * Notes
-    * Each entry starts with an index, which should be unique.
-    * directory_path points to the folder containing your shapefiles.
-    * r_aufl defines the spatial resolution of the downloaded tiles in meters.
-    * img_height & img_width: use null for maximum tile size.
-    * If wms_calc is true, image layers are extracted from the WMS.
-    * If meta_calc is true, metadata (like acquisition dates) will also be extracted.
-    * Use merge: true if you want to automatically merge all tiles per shapefile.
-    * Set img_width and img_height to null for maximum tile size (default behavior).
+  merge: false   # set to true if tiles should be merged to one big file for each shape file, false otherwise. Attention: Big files if polygons are big or far apart
+  AOI: null   # specify area of interest in name of merged meta and image files
+  year: null   # specify a year in name of merged meta and image files </pre>
+  
   * Alternative option:
     * Instead of a YAML file, you can manually configure global parameters in the main() function of wms_saveraster.py, and call the function at the bottom of the script.
   ```
