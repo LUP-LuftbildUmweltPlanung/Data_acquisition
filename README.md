@@ -26,8 +26,8 @@ The different scripts correspond to different wms servers or geoportals between 
 
 ### Executing program
 
-* Create a directory and place the shape files you want to use for the data acquisition in it
-* Open the program file you want to work with
+* Create a directory and place the shape files you want to use for the data acquisition in it.
+* Open the program file you want to work with.
 * To run multiple WMS requests, define each configuration in a YAML file like this:
 <pre> - index: 0  # Explanation row - update index for each new config
 
@@ -60,11 +60,13 @@ The different scripts correspond to different wms servers or geoportals between 
     * Each entry starts with an index, which should be unique.
     * directory_path points to the folder containing your shapefiles.
     * r_aufl defines the spatial resolution of the downloaded tiles in meters.
+    * img_height & img_width: use null for maximum tile size.
     * If wms_calc is true, image layers are extracted from the WMS.
     * If meta_calc is true, metadata (like acquisition dates) will also be extracted.
     * Use merge: true if you want to automatically merge all tiles per shapefile.
     * Set img_width and img_height to null for maximum tile size (default behavior).
-  * Alternatively to the yml file you can specify the global parameters in the main function of wms_saveraster.py and call the main function at the bottom of the programm:
+  * Alternative option:
+    * Instead of a YAML file, you can manually configure global parameters in the main() function of wms_saveraster.py, and call the function at the bottom of the script.
   ```
   directory_path = r"path_to_shapefiles"
   r_aufl = 0.2                                #resolution in m
