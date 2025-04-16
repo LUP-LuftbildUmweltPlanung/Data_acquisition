@@ -28,16 +28,79 @@ The different scripts correspond to different wms servers or geoportals between 
 
 * Create a directory and place the shape files you want to use for the data acquisition in it
 * Open the program file you want to work with
-* Run wms request:
-  * from csv file:
-    * For a visualization checkout the folder_structure_diagram and the process_diagram
-    * Specify the parameters for one or more wms request in a csv file with the header:
-      * index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
-    * The names are indicating the parameter values
-    * separate the parameter values with a comma
-    * Enter one wms request per line
-    * Make sure that the csv file in the "iterate_wms_servers.py" script matches the path to your csv file
-  * Alternatively to the csv file you can specify the global parameters in the main function of wms_saveraster.py and call the main function at the bottom of the programm:
+* To run multiple WMS requests, define each configuration in a YAML file like this:
+<pre> ```yaml # - index: 0  # Explanation row - update index for each new config
+
+  ######### General #########
+  log_file: "log1.txt"
+  directory_path: "your_directory\\"
+
+  ######### Tile settings #########
+  r_aufl: 0.2
+  img_height: null
+  img_width: null
+
+  ######### Image extraction #########
+  wms_calc: false
+  wms_ad: ""
+  layer: ""
+  layer2: null
+  state: "None"
+
+  ######### Meta extraction #########
+  meta_calc: false
+  wms_ad_meta: ""
+  layer_meta: ""
+
+  ######### Merging #########
+  merge: false
+  AOI: null
+  year: null
+
+- index: 1
+  log_file: "log2.txt"
+  directory_path: "test_script3\\"
+  r_aufl: 0.2
+  img_height: 400
+  img_width: 400
+  wms_calc: true
+  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+  layer: "dop20_bebb_2019_2021_farbe"
+  layer2: null
+  state: "BB_history"
+  meta_calc: false
+  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
+  layer_meta: "bb_dop-19-21_info"
+  merge: false
+  AOI: null
+  year: null
+
+- index: 2
+  log_file: "log2.txt"
+  directory_path: "test_script2\\"
+  r_aufl: 0.2
+  img_height: 500
+  img_width: 500
+  wms_calc: true
+  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
+  layer: "dop20_bebb_2019_2021_farbe"
+  layer2: null
+  state: "BB_history"
+  meta_calc: true
+  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
+  layer_meta: "bb_dop-19-21_info"
+  merge: true
+  AOI: null
+  year: null ``` </pre>
+ * Notes
+    * Each entry starts with an index, which should be unique.
+    * directory_path points to the folder containing your shapefiles.
+    * r_aufl defines the spatial resolution of the downloaded tiles in meters.
+    * If wms_calc is true, image layers are extracted from the WMS.
+    * If meta_calc is true, metadata (like acquisition dates) will also be extracted.
+    * Use merge: true if you want to automatically merge all tiles per shapefile.
+    * Set img_width and img_height to null for maximum tile size (default behavior).
+  * Alternatively to the yml file you can specify the global parameters in the main function of wms_saveraster.py and call the main function at the bottom of the programm:
   ```
   directory_path = r"path_to_shapefiles"
   r_aufl = 0.2                                #resolution in m
