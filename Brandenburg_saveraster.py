@@ -172,7 +172,7 @@ def create_zip_list(raster_files_zip, geom, file_type, x_start, x_end, y_start, 
 
             #Skip extracting image file if the part does not intersect with the polygon
             coord_x_min, coord_x_max, coord_y_min, coord_y_max = decode_coordinates(x, x+1, y, y+1)
-            check_intersect = func.polygon_partition_intersect(geom, coord_x_min, coord_x_max, coord_y_min, coord_y_max)
+            check_intersect = func.polygon_partition_intersect(geom, coord_x_min, coord_y_min, coord_x_max, coord_y_max)
 
             if check_intersect == False:
                 print("Partition does not intersect and is not added to download list.")

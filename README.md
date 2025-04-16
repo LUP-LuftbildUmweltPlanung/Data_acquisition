@@ -26,18 +26,39 @@ The different scripts correspond to different wms servers or geoportals between 
 
 ### Executing program
 
-* Create a directory and place the shape files you want to use for the data acquisition in it
-* Open the program file you want to work with
-* Run wms request:
-  * from csv file:
-    * For a visualization checkout the folder_structure_diagram and the process_diagram
-    * Specify the parameters for one or more wms request in a csv file with the header:
-      * index,log_file,directory_path,r_aufl,wms_ad,layer,layer2,wms_ad_meta,layer_meta,meta_calc,wms_calc,state
-    * The names are indicating the parameter values
-    * separate the parameter values with a comma
-    * Enter one wms request per line
-    * Make sure that the csv file in the "iterate_wms_servers.py" script matches the path to your csv file
-  * Alternatively to the csv file you can specify the global parameters in the main function of wms_saveraster.py and call the main function at the bottom of the programm:
+* Create a directory and place the shape files you want to use for the data acquisition in it.
+* Open the program file you want to work with.
+* To run multiple WMS requests, define each configuration in a YAML file like this:
+<pre> - index: 0  # Explanation row - update index for each new config
+
+  ######### General #########
+  log_file: "log1.txt"   # log file for the download of this wms request
+  directory_path: "your_directory\\"  # directory with the shape files that will be processed. output_dir = directory_path\\output_wms
+
+  ######### Tile settings #########
+  r_aufl: 0.2   # spatial resolution of extracted tif files in meter (for image and meta)
+  img_height: null # The height of the downloaded tiles in pixel, set to null for maximum height
+  img_width: null # The width of the downloaded tiles in pixel, set to null for maximum height
+
+  ######### Image extraction #########
+  wms_calc: false    # set to true if you want to extract raster data, false otherwise
+  wms_ad: ""    # wms web address for the image
+  layer: ""   # name of rgb layer in wms server
+  layer2: null    # name of layer with infrared as band 1 in wms server, set to null to skip
+  state: "None"   # set to "BB_history" if the data can only be extracted in png/jpeg format instead of tif (e.g. for the historic Brandenburg wms)
+
+  ######### Meta extraction #########
+  meta_calc: false   # set to true if you want to extract metadata, false otherwise
+  wms_ad_meta: ""   # wms web address for the metadata
+  layer_meta: ""    # name of layer with acquisition dates in wms server of metadata
+
+  ######### Merging #########
+  merge: false   # set to true if tiles should be merged to one big file for each shape file, false otherwise. Attention: Big files if polygons are big or far apart
+  AOI: null   # specify area of interest in name of merged meta and image files
+  year: null   # specify a year in name of merged meta and image files </pre>
+  
+  * Alternative option:
+    * Instead of a YAML file, you can manually configure global parameters in the main() function of wms_saveraster.py, and call the function at the bottom of the script.
   ```
   directory_path = r"path_to_shapefiles"
   r_aufl = 0.2                                #resolution in m
@@ -59,8 +80,9 @@ The different scripts correspond to different wms servers or geoportals between 
 
 ## Authors
 
-* Vera Sons
-* Benjamin Stöckigt
+* [Vera Sons](https://github.com/Unterwex)
+* [Benjamin Stöckigt](https://github.com/benjaminstoeckigt)
+* [Shadi Ghantous](https://github.com/Shadiouss)
 
 
 ## License
