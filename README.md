@@ -55,42 +55,6 @@ The different scripts correspond to different wms servers or geoportals between 
   ######### Merging #########
   merge: false
   AOI: null
-  year: null
-
-- index: 1
-  log_file: "log2.txt"
-  directory_path: "test_script3\\"
-  r_aufl: 0.2
-  img_height: 400
-  img_width: 400
-  wms_calc: true
-  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
-  layer: "dop20_bebb_2019_2021_farbe"
-  layer2: null
-  state: "BB_history"
-  meta_calc: false
-  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
-  layer_meta: "bb_dop-19-21_info"
-  merge: false
-  AOI: null
-  year: null
-
-- index: 2
-  log_file: "log2.txt"
-  directory_path: "test_script2\\"
-  r_aufl: 0.2
-  img_height: 500
-  img_width: 500
-  wms_calc: true
-  wms_ad: "https://isk.geobasis-bb.de/mapproxy/dop20_2019_2021/service/wms?request=GetCapabilities&service=WMS"
-  layer: "dop20_bebb_2019_2021_farbe"
-  layer2: null
-  state: "BB_history"
-  meta_calc: true
-  wms_ad_meta: "https://isk.geobasis-bb.de/ows/aktualitaeten_wms?"
-  layer_meta: "bb_dop-19-21_info"
-  merge: true
-  AOI: null
   year: null </pre>
  * Notes
     * Each entry starts with an index, which should be unique.
