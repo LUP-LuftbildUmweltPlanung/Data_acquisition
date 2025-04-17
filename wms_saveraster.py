@@ -453,7 +453,7 @@ def try_connect_wms(url, versions):
             sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
     return None, None  # If all attempts fail
 
-def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
+def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
                        y_max, seen_tiles):
     """Process each polygon of a file and handle WMS version selection."""
 
@@ -465,23 +465,6 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
 
-    wms, wms_meta = None, None
-    wms_version_used, wms_meta_version_used = None, None
-
-    if wms_calc:
-        wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
-        if wms is None:
-            sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
-
-    if meta_calc:
-        wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
-        if wms_meta is None:
-            sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
-
-    if wms_version_used:
-        print(f" Data will download using WMS version: {wms_version_used}")
-    if wms_meta_version_used:
-        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
 
     if reduce_p_factor > 1 and lmdb_path is None:
         print(f"Extracting raster data from wms ({reduce_p_factor ** 2} parts) ...")
@@ -593,6 +576,24 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
 
+    wms, wms_meta = None, None
+    wms_version_used, wms_meta_version_used = None, None
+
+    if wms_calc:
+        wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+        if wms is None:
+            sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+    if meta_calc:
+        wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+        if wms_meta is None:
+            sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+    if wms_version_used:
+        print(f" Data will download using WMS version: {wms_version_used}")
+    if wms_meta_version_used:
+        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
     shapefile_dir, shapefile_name = os.path.split(shapefile_path)
     output_file_name = shapefile_name
 
@@ -641,7 +642,7 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
         output_file_name_n = output_file_name.split(".")[0]
 
-        polygon_processing(full_geom, output_wms_path, output_file_name_n,
+        polygon_processing(wms, wms_meta, full_geom, output_wms_path, output_file_name_n,
                            epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
 
         # ADD HERE
@@ -690,7 +691,7 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             else:
                 output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
 
-            polygon_meta, new_safetensor_dict = polygon_processing(geom, output_wms_path, output_file_name_n,
+            polygon_meta, new_safetensor_dict = polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name_n,
                                epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
 
             metadata_list.append(polygon_meta)
@@ -816,7 +817,8 @@ def main(input):
                         print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
                         process_file(file_path, output_wms_path, AOI=AOI, year=year)
                         print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-
+                        sub_log.info(f"Execution time for  {filename}: {time.time() - starttime} seconds")
+                        print(f"Execution time for  {filename}: {time.time() - starttime} seconds")
                         counter = counter + 1
 
     else:

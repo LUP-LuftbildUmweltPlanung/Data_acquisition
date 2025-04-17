@@ -322,8 +322,8 @@ def print_bands_in_lmdb(path_to_lmdb):
 
 def read_all_from_parquet(path_to_parquet):
     parquet_df = pd.read_parquet(path_to_parquet)
-    #print(parquet_df.head())
-    #print(parquet_df.info())
+    print(parquet_df.head())
+    print(parquet_df.info())
     return parquet_df
 
 def read_key_from_parquet(key, path_to_parquet):
@@ -384,9 +384,9 @@ def lmdb_meta_to_tif(output_path, key, lmdb_path, parquet_path):
     meta_unflattened = unflatten_metadata(meta_dict)
     save_tif_with_lmdb_bands(output_path, bands_dict, meta_unflattened)
 
-path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/test_tiles.lmdb"
-read_all_from_lmdb(path_to_lmdb)
-print_bands_in_lmdb(path_to_lmdb)
-path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/parquet/test_meta_merged.parquet"
-read_all_from_parquet(path_to_parquet)
-lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/test_x.tif", "396015_5707920_20230422", path_to_lmdb, path_to_parquet)
+#path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles.lmdb"
+#read_all_from_lmdb(path_to_lmdb)
+#print_bands_in_lmdb(path_to_lmdb)
+#path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles_meta_merged.parquet"
+#read_all_from_parquet(path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_x.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
