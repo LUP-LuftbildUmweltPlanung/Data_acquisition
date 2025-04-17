@@ -576,24 +576,6 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
 
-    wms, wms_meta = None, None
-    wms_version_used, wms_meta_version_used = None, None
-
-    if wms_calc:
-        wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
-        if wms is None:
-            sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
-
-    if meta_calc:
-        wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
-        if wms_meta is None:
-            sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
-
-    if wms_version_used:
-        print(f" Data will download using WMS version: {wms_version_used}")
-    if wms_meta_version_used:
-        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
-
     shapefile_dir, shapefile_name = os.path.split(shapefile_path)
     output_file_name = shapefile_name
 
@@ -615,6 +597,25 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
     if merge and not lmdb_path: # ToDo longterm: add lmdb application for merging!!!
         print(" Merging mode enabled: using full shapefile extent")
+
+        wms, wms_meta = None, None
+        wms_version_used, wms_meta_version_used = None, None
+
+        if wms_calc:
+            wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+            if wms is None:
+                sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+        if meta_calc:
+            wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+            if wms_meta is None:
+                sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+        if wms_version_used:
+            print(f" Data will download using WMS version: {wms_version_used}")
+        if wms_meta_version_used:
+            print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
         seen_tiles = set()
 
         # Union all polygons to get the full extent
@@ -675,15 +676,61 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             sub_log.debug(shapefile_name)
             shapefile_meta_folder = func.create_directory(parquet_path, str(Path(shapefile_name).stem))
             sub_log.debug(shapefile_meta_folder)
+            output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
+
+        lmdb_keys_prefixes = False
+        if lmdb_path:
+            #print(1)
+            current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
+            #print(current_lmdb)
+            if os.path.exists(current_lmdb):
+                #print(2)
+                n_shapes = inLayer.GetFeatureCount()
+                #print(n_shapes)
+                n_keys_lmdb, lmdb_keys_prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes(current_lmdb, n_shapes)
+                #print(n_keys_lmdb)
+
+                if n_keys_lmdb is None:
+                    print(f"✅ LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
+                    return
+
         metadata_list = []
         safetensor_dict = {}
 
+        wms, wms_meta = None, None
+        wms_version_used, wms_meta_version_used = None, None
+
+        if wms_calc:
+            wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+            if wms is None:
+                sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+        if meta_calc:
+            wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+            if wms_meta is None:
+                sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+        if wms_version_used:
+            print(f" Data will download using WMS version: {wms_version_used}")
+        if wms_meta_version_used:
+            print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
         for feature in inLayer:
+
             seen_tiles = set()  # reset per polygon
 
             print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
             geom = feature.GetGeometryRef()
             extent = geom.GetEnvelope()
+
+            if lmdb_keys_prefixes != False:
+                minX, _, minY, _ = extent
+                feature_prefix = f"{int(minX)}_{int(minY)}"
+                if feature_prefix in lmdb_keys_prefixes:
+                    print(f"{feature_prefix}_X exists and is skipped.")
+                    polygon +=1
+                    polygon_progress.update(1)
+                    continue
 
             if state == "BB_history":
                 years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
@@ -697,8 +744,8 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             metadata_list.append(polygon_meta)
             safetensor_dict.update(new_safetensor_dict)
 
-            #if polygon % 1000 == 0 and polygon > 0 and parquet_path:
-            if get_memory_usage_percent() >= 80 and polygon > 0:
+            if polygon % 10 == 0 and polygon > 0 and parquet_path:
+                #if get_memory_usage_percent() >= 80 and polygon > 0:
                 if parquet_path:
                     print("write to parquet 1")
                     file_name = f"meta_{polygon - 1000}-{polygon}.parquet"
@@ -717,12 +764,10 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             file_name = f"meta_x-{polygon}.parquet"
             #print(shapefile_meta_folder)
             lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-            output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
             lmdb_fkt.combine_parquet_files(shapefile_meta_folder, output_meta_file)
 
         if lmdb_path:
             print("write to lmdb 2")
-            current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
             lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
 
 

@@ -97,6 +97,44 @@ def create_or_open_lmdb(path_to_lmdb, size=None):
 
         return lmdb.open(path_to_lmdb, map_size=map_size)
 
+
+"""def get_key_number_lmdb(path_to_lmdb):
+    env = lmdb.open(
+        path_to_lmdb,
+        readonly=True,
+        lock=False,  # Kein Schreib-Lock nötig
+        readahead=False,  # Spart RAM bei großen DBs
+        max_readers=1  # Geringe Belastung
+    )
+
+    with env.begin() as txn:
+        n_keys = txn.stat()['entries']
+
+    print(f"✅ Anzahl der Einträge in der LMDB: {n_keys}")
+    return n_keys"""
+
+def count_lmdb_keys_and_prefixes(path_to_lmdb, n_shapes):
+    """Liest alle Keys aus LMDB und extrahiert Prefixes wie 'minX_minY'"""
+    #print(path_to_lmdb)
+    env = lmdb.open(path_to_lmdb, readonly=True, lock=False, readahead=False, max_readers=1)
+    #print(4)
+    prefixes = set()
+
+    with env.begin() as txn:
+        stat = txn.stat()
+        n_keys = stat['entries']
+        #print(n_keys)
+        if n_keys < n_shapes:
+            with txn.cursor() as cursor:
+                #print(5)
+                for key, _ in cursor:
+                    parts = key.decode().split("_")[:2]
+                    prefix = f"{parts[0]}_{parts[1]}"
+                    prefixes.add(prefix)
+            return n_keys, prefixes
+        else:
+            return None, None
+
 def merge_raster_to_lmdb(img, path_to_lmdb, metadata, ir=None, acquisition_date=None):
 
     db = create_or_open_lmdb(path_to_lmdb)
@@ -384,9 +422,19 @@ def lmdb_meta_to_tif(output_path, key, lmdb_path, parquet_path):
     meta_unflattened = unflatten_metadata(meta_dict)
     save_tif_with_lmdb_bands(output_path, bands_dict, meta_unflattened)
 
-#path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles2.lmdb"
-#read_all_from_lmdb(path_to_lmdb)
-#print_bands_in_lmdb(path_to_lmdb)
-#path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles2_meta_merged.parquet"
-#read_all_from_parquet(path_to_parquet)
-#lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_x2.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
+path_to_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_tiles.lmdb"
+read_all_from_lmdb(path_to_lmdb)
+print_bands_in_lmdb(path_to_lmdb)
+path_to_parquet = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/parquet/test_tiles_meta_merged.parquet"
+read_all_from_parquet(path_to_parquet)
+lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test1_x4.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
+
+
+path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles2.lmdb"
+read_all_from_lmdb(path_to_lmdb)
+print_bands_in_lmdb(path_to_lmdb)
+path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles2_meta_merged.parquet"
+read_all_from_parquet(path_to_parquet)
+lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_x4.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
+
+#513233_5966941
