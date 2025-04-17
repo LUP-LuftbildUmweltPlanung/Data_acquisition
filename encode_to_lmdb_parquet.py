@@ -15,7 +15,7 @@ def img_to_bands(img_bytesio):
         tensor_dict = {}
         for i in range(1, src.count + 1):
             band = src.read(i).astype(np.float32)
-            print(f"band type: {type(band)}")
+            #print(f"band type: {type(band)}")
             tensor_dict[f"{i}"] = band
         return tensor_dict
 
@@ -74,8 +74,8 @@ def create_or_open_lmdb(path_to_lmdb, size=None):
     :param size: Maximale Speichergröße in Bytes (optional)
     :return: LMDB-Umgebung (db)
     """
-    print("in create_or_open_lmdb")
-    print(os.path.exists((path_to_lmdb)))
+    #print("in create_or_open_lmdb")
+    #print(os.path.exists((path_to_lmdb)))
     if os.path.exists(path_to_lmdb):
         print(f"⚡ Öffne bestehende LMDB: {path_to_lmdb}")
 
@@ -90,10 +90,10 @@ def create_or_open_lmdb(path_to_lmdb, size=None):
 
         return lmdb.open(path_to_lmdb, map_size=map_size)
     else:
-        # Falls `size` nicht gegeben ist, nutze Standardwert von 10MB
-        default_size = 10 * 1024 * 1024
+        # Falls `size` nicht gegeben ist, nutze Standardwert von 20GB
+        default_size = 20 * 1024 * 1024 * 1024
         map_size = size if size else default_size
-        print(f"🆕 Erstelle neue LMDB: {path_to_lmdb} mit {map_size >> 20}MB Speicher")
+        print(f"🆕 Erstelle neue LMDB: {path_to_lmdb} mit {map_size >> 20}GB Speicher")
 
         return lmdb.open(path_to_lmdb, map_size=map_size)
 
@@ -101,25 +101,25 @@ def merge_raster_to_lmdb(img, path_to_lmdb, metadata, ir=None, acquisition_date=
 
     db = create_or_open_lmdb(path_to_lmdb)
 
-    print(1)
+    #print(1)
 
     # Lies die Bytes **einmal**
     img_bytes = img.read()
     ir_bytes = ir.read() if ir else None
 
-    print(2)
+    #print(2)
 
     bands = img_to_bands(io.BytesIO(img_bytes))
-    print(f"type bands 1: {type(bands)}")
-    print(3)
+    #print(f"type bands 1: {type(bands)}")
+    #print(3)
     if ir:
         band_ir = ir_to_band(io.BytesIO(ir_bytes))
         bands["4"] = band_ir
-        print(f"type bands 2: {type(bands)}")
-    print(4)
+        #print(f"type bands 2: {type(bands)}")
+    #print(4)
 
     bands_dict_safetensor = save_bands_to_safetensor(bands)
-    print(5)
+    #print(5)
     if acquisition_date:
         key = f"{int(metadata[0])}_{int(metadata[1])}_{acquisition_date}"
     else:
@@ -127,18 +127,51 @@ def merge_raster_to_lmdb(img, path_to_lmdb, metadata, ir=None, acquisition_date=
     write_to_lmdb(db, key, bands_dict_safetensor)
 
     print(f"✅ {key} gespeichert mit {len(bands)} Bändern")
-    print(6)
+    #print(6)
     db.close()
     return key
 
+def merge_raster_to_safetensor(img, metadata, ir=None, acquisition_date=None):
+    # Lies die Bytes **einmal**
+    img_bytes = img.read()
+    ir_bytes = ir.read() if ir else None
 
+    bands = img_to_bands(io.BytesIO(img_bytes))
+
+    if ir:
+        band_ir = ir_to_band(io.BytesIO(ir_bytes))
+        bands["4"] = band_ir
+
+    bands_dict_safetensor = save_bands_to_safetensor(bands)
+
+    if acquisition_date:
+        key = f"{int(metadata[0])}_{int(metadata[1])}_{acquisition_date}"
+    else:
+        key = f"{int(metadata[0])}_{int(metadata[1])}"
+
+    print(f"✅ {key} gespeichert als safetensor mit {len(bands)} Bändern")
+
+    return key, {key: bands_dict_safetensor}
+
+
+def write_dict_to_lmdb(safetensor_dict, path_to_lmdb):
+
+    db = create_or_open_lmdb(path_to_lmdb)
+    print(len(safetensor_dict))
+    print(type(safetensor_dict))
+    for key, item in safetensor_dict.items():
+        print("key")
+        write_to_lmdb(db, key, item)
+
+    print(f"✅ {len(safetensor_dict)} tiles gespeichert in lmdb")
+    db.close()
 
 
 def get_meta_from_img(img):
-    print("in get_meta_from_img")
+    #print("in get_meta_from_img")
     img = io.BytesIO(img.read())
     with rasterio.open(img) as src:
-        print("test")
+        #print("test")
         metadata = {
             "crs": src.crs.to_string(),
             "transform": src.transform,
@@ -199,24 +232,23 @@ def get_metadata(input):
     :param input: Pfad zu output of wms request
     :return: Metadaten-Dictionary von Rasterio
     """
-    print("in get_metadata")
-    print(type(input))
+    #print("in get_metadata")
+    #print(type(input))
     input = io.BytesIO(input.read())
     with rasterio.open(input) as src:
         meta = src.meta.copy()  # Metadaten speichern
 
     meta = flatten_metadata(meta)
-    print(meta)
+    #print(meta)
     return meta
 
 
 def write_meta_to_parquet(metadata, parquet_folder, file_name):
     print(f"parquet folder in write_meta_to_parquet: {parquet_folder}")
-    #print(type(parquet_folder), type(file_name))
+    print(type(parquet_folder), type(file_name))
     output_parquet = os.path.join(parquet_folder,file_name)
-    #out_2 = Path(parquet_folder) / Path(file_name)
     print(output_parquet)
-    #print(out_2)
+    print(metadata)
     df = pd.DataFrame(metadata) # ToDo: flatten weg?
 
     df.set_index("lmdb_key", inplace=True)
@@ -274,17 +306,30 @@ def read_all_from_lmdb(path_to_lmdb):
     #print("🔑 Gespeicherte Keys & Bänder in LMDB:")
     #print(all_data)
 
+def print_bands_in_lmdb(path_to_lmdb):
+
+    all_data = read_all_from_lmdb(path_to_lmdb)
+    print(all_data)
+
+    print("🔑 Gespeicherte Keys & Bänder in LMDB:")
+    for tif_name, bands in all_data.items():
+        print(f"🖼️ {tif_name}: {list(bands.keys())}")
+
+    #for data, metadata in all_data.items():
+    #    #tif_name, bands = data
+    #    #print(f"🖼️ {tif_name}: {list(bands.keys())}")
+    #    print(metadata)
 
 def read_all_from_parquet(path_to_parquet):
     parquet_df = pd.read_parquet(path_to_parquet)
-    print(parquet_df.head())
-    print(parquet_df.info())
+    #print(parquet_df.head())
+    #print(parquet_df.info())
     return parquet_df
 
 def read_key_from_parquet(key, path_to_parquet):
     parquet_df = pd.read_parquet(path_to_parquet)
-    print(parquet_df.head())
-    print(parquet_df.info())
+    #print(parquet_df.head())
+    #print(parquet_df.info())
     return parquet_df.loc[key].to_dict()
 
 
@@ -339,9 +384,9 @@ def lmdb_meta_to_tif(output_path, key, lmdb_path, parquet_path):
     meta_unflattened = unflatten_metadata(meta_dict)
     save_tif_with_lmdb_bands(output_path, bands_dict, meta_unflattened)
 
-#path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script/out.lmdb"
-#read_all_from_lmdb(path_to_lmdb)
-#path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script/parquet/test_meta_merged.parquet"
-#read_all_from_parquet(path_to_parquet)
-
-#lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script/test_x.tif", "396015_5707920_20230422", path_to_lmdb, path_to_parquet)
+path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/test_tiles.lmdb"
+read_all_from_lmdb(path_to_lmdb)
+print_bands_in_lmdb(path_to_lmdb)
+path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/parquet/test_meta_merged.parquet"
+read_all_from_parquet(path_to_parquet)
+lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script4/test_x.tif", "396015_5707920_20230422", path_to_lmdb, path_to_parquet)

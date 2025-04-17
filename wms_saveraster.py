@@ -14,6 +14,10 @@ import download_by_shape_functions as func
 from pathlib import Path
 
 import encode_to_lmdb_parquet as lmdb_fkt
+import psutil
+
+def get_memory_usage_percent():
+    return psutil.virtual_memory().percent
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
@@ -159,6 +163,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
         size = (round((x_max - x_min) / r_aufl), round((y_max - y_min) / r_aufl))
 
     extract_meta = {}
+    new_safetensor_dict = {}
 
     # extract rgb image
     try:
@@ -210,7 +215,8 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             try:
                 if lmdb_path:
                     sub_log.debug("lmdb_path")
-                    extract_meta["lmdb_key"] = lmdb_fkt.merge_raster_to_lmdb(img, lmdb_path, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
+                    extract_meta["lmdb_key"], new_safetensor_dict = lmdb_fkt.merge_raster_to_safetensor(img, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
+                    #extract_meta["lmdb_key"] = lmdb_fkt.merge_raster_to_lmdb(img, lmdb_path, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
                 else:
                     sub_log.debug("else")
                     merge_raster_bands(img, img2, output_file_path)
@@ -231,7 +237,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
         except:
             sub_log.error("Could not write data to file %s." % output_file_path)
     sub_log.debug(f"extract meta: {extract_meta}")
-    return extract_meta
+    return extract_meta, new_safetensor_dict
 
 
 def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
@@ -373,6 +379,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
     """Call several functions to get raster data for dop and meta files"""
     sub_log.debug("in extract_raster_data_process()")
     new_metadata = {}
+    new_safetensor_dict = {}
 
     #dop
     if calc_type == "wms" and wms_calc == True and wms_var != None:
@@ -385,7 +392,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
         else:
             sub_log.debug("file does not exist yet")
             try:
-                new_metadata = extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=acquisition_date)
+                new_metadata, new_safetensor_dict = extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=acquisition_date)
             except Exception as e:
                 sub_log.error("Error in extract_raster_data %s" %e)
 
@@ -432,7 +439,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
                     sub_log.error("Cannot write meta raster data for %s" % output_file_name)
         new_metadata.update({"acquisition": bildflug_date})
 
-    return new_metadata
+    return new_metadata, new_safetensor_dict
 
 def try_connect_wms(url, versions):
     """Attempt to connect to a WMS server using multiple versions and return the successful one."""
@@ -453,6 +460,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
     sub_log.debug("Processing %s" % output_file_name)
 
     new_metadata = {}
+    new_safetensor_dict = {}
 
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
@@ -565,20 +573,20 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             return
 
         try:
-            acquisition_date = extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
+            acquisition_date, _ = extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
                                                            epsg_code_int, x_min, y_min, x_max, y_max, "meta")
             acquisition_date.setdefault("acquisition", None)
-            new_metadata = extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
+            new_metadata, new_safetensor_dict = extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
                                         y_min, x_max, y_max, "wms", acquisition_date=acquisition_date["acquisition"])
 
-            print(f"new_metadata: {new_metadata}")
-            print(f"acquisition date: {acquisition_date}")
+            #print(f"new_metadata: {new_metadata}")
+            #print(f"acquisition date: {acquisition_date}")
             new_metadata.update(acquisition_date)
             print(f"updated new_metadata: {new_metadata}")
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
 
-    return new_metadata
+    return new_metadata, new_safetensor_dict
             
 def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
@@ -667,6 +675,7 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             shapefile_meta_folder = func.create_directory(parquet_path, str(Path(shapefile_name).stem))
             sub_log.debug(shapefile_meta_folder)
         metadata_list = []
+        safetensor_dict = {}
 
         for feature in inLayer:
             seen_tiles = set()  # reset per polygon
@@ -681,26 +690,37 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             else:
                 output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
 
-            polygon_meta = polygon_processing(geom, output_wms_path, output_file_name_n,
+            polygon_meta, new_safetensor_dict = polygon_processing(geom, output_wms_path, output_file_name_n,
                                epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
 
             metadata_list.append(polygon_meta)
+            safetensor_dict.update(new_safetensor_dict)
 
-            if polygon % 5 == 0 and polygon > 0 and parquet_path:
-                print("write meta")
-                file_name = f"meta_{polygon - 5}-{polygon}.parquet"
-                lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-                metadata_list = []
+            #if polygon % 1000 == 0 and polygon > 0 and parquet_path:
+            if get_memory_usage_percent() >= 80 and polygon > 0:
+                if parquet_path:
+                    print("write to parquet 1")
+                    file_name = f"meta_{polygon - 1000}-{polygon}.parquet"
+                    lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
+                    metadata_list = []
+                if lmdb_path:
+                    print("write to lmdb 1")
+                    lmdb_fkt.write_dict_to_lmdb(safetensor_dict, lmdb_path)
+                    safetensor_dict = {}
             polygon += 1
             polygon_progress.update(1)
 
         if parquet_path:
-            print("write meta")
+            print("write to parquet 2")
             file_name = f"meta_x-{polygon}.parquet"
-            print(shapefile_meta_folder)
+            #print(shapefile_meta_folder)
             lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
             output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
             lmdb_fkt.combine_parquet_files(shapefile_meta_folder, output_meta_file)
+
+        if lmdb_path:
+            print("write to lmdb 2")
+            lmdb_fkt.write_dict_to_lmdb(safetensor_dict, lmdb_path)
 
 
 def main(input):
@@ -775,7 +795,6 @@ def main(input):
     else:
         img_format = "image/tiff"
         meta_info_format = "text/plain"
-
 
     if lmdb_path:
         output_wms_path = ""
