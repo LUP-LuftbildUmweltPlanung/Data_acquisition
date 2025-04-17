@@ -706,7 +706,8 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
                     metadata_list = []
                 if lmdb_path:
                     print("write to lmdb 1")
-                    lmdb_fkt.write_dict_to_lmdb(safetensor_dict, lmdb_path)
+                    current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
+                    lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
                     safetensor_dict = {}
             polygon += 1
             polygon_progress.update(1)
@@ -721,7 +722,8 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
         if lmdb_path:
             print("write to lmdb 2")
-            lmdb_fkt.write_dict_to_lmdb(safetensor_dict, lmdb_path)
+            current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
+            lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
 
 
 def main(input):
@@ -799,27 +801,27 @@ def main(input):
 
     if lmdb_path:
         output_wms_path = ""
-        if os.path.exists(lmdb_path):
-            print(f"LMDB path already exists. Skipping WMS tile download...")
-        else:
-            print(f"Proceeding with WMS tile download and processing...")
-            # process bar for number of files:
-            count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
-            counter = 1
+        #if os.path.exists(lmdb_path):
+        #    print(f"LMDB path already exists. Skipping WMS tile download...")
+        #else:
+        print(f"Proceeding with WMS tile download and processing...")
+        # process bar for number of files:
+        count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
+        counter = 1
 
-            # Loop through each file in the directory
-            for filename in os.listdir(directory_path):
-                if filename.endswith(".shp"):
-                    # Construct the full file path
-                    file_path = os.path.join(directory_path, filename)
-                    # Check if it's a file and not a directory (optional, depending on your needs)
-                    if os.path.isfile(file_path):
-                        print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-                        process_file(file_path, output_wms_path, AOI=AOI, year=year)
-                        print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-                        sub_log.info(f"Execution time for  {filename}: {time.time() - starttime} seconds")
-                        print(f"Execution time for  {filename}: {time.time() - starttime} seconds")
-                        counter = counter + 1
+        # Loop through each file in the directory
+        for filename in os.listdir(directory_path):
+            if filename.endswith(".shp"):
+                # Construct the full file path
+                file_path = os.path.join(directory_path, filename)
+                # Check if it's a file and not a directory (optional, depending on your needs)
+                if os.path.isfile(file_path):
+                    print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
+                    process_file(file_path, output_wms_path, AOI=AOI, year=year)
+                    print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
+                    sub_log.info(f"Execution time for  {filename}: {time.time() - starttime} seconds")
+                    print(f"Execution time for  {filename}: {time.time() - starttime} seconds")
+                    counter = counter + 1
 
     else:
         sub_log.debug("in main - else. So lmdb_path is not defined.")
