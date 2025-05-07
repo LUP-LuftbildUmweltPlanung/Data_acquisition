@@ -1,6 +1,7 @@
 import os
 from importlib.metadata import metadata
 
+import pandas as pd
 from osgeo import ogr, gdal, osr
 from owslib.wms import WebMapService
 import glob
@@ -15,6 +16,10 @@ from pathlib import Path
 
 import encode_to_lmdb_parquet as lmdb_fkt
 import psutil
+
+import create_key_parquet as key_parquet
+
+
 
 def get_memory_usage_percent():
     return psutil.virtual_memory().percent
@@ -166,17 +171,31 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
     new_safetensor_dict = {}
 
     # extract rgb image
-    try:
-        img = wms.getmap(  # CHANGE this is the image as a variable
-            layers=[layer],
-            srs=epsg_code,
-            bbox=(x_min, y_min, x_max, y_max),
-            # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-            size=size,
-            format=img_format)
+    retry_delays = [60, 600, 1800, 3600]
 
-    except:
-        sub_log.error("Layer 1: Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
+    success = False
+    for attempt, delay in enumerate(retry_delays):
+        try:
+            img = wms.getmap(
+                layers=[layer],
+                srs=epsg_code,
+                bbox=(x_min, y_min, x_max, y_max),
+                size=size,
+                format=img_format
+            )
+            success = True
+            break  # Wenn erfolgreich, verlasse die Schleife
+        except Exception as e:
+            sub_log.warning(
+                f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {layer} – Warte {delay // 60} Minuten. Fehler: {e}")
+            time.sleep(delay)
+
+    if not success:
+        sub_log.error(
+            "Layer 1: Can't get map for layer %s in %s from: %s. Nach mehreren Versuchen abgebrochen." % (layer,
+                                                                                                          img_format,
+                                                                                                          wms_ad))
+        raise RuntimeError("WMS GetMap fehlgeschlagen nach mehreren Versuchen.")
 
 
     if "img" in locals() and parquet_path:
@@ -193,16 +212,26 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
     # extract ir image
     if layer2 != None and layer2 != "None" and layer2 != "nan":
         img2 = None
-        try:
-            img2 = wms.getmap(
-                layers=[layer2],
-                srs=epsg_code,
-                bbox=(x_min, y_min, x_max, y_max),
-                # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-                size=size,
-                format=img_format)
-        except:
+
+        success = False
+        for attempt, delay in enumerate(retry_delays):
+            try:
+                img2 = wms.getmap(
+                    layers=[layer2],
+                    srs=epsg_code,
+                    bbox=(x_min, y_min, x_max, y_max),
+                    # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
+                    size=size,
+                    format=img_format)
+                success = True
+                break  # Wenn erfolgreich, verlasse die Schleife
+            except Exception as e:
+                sub_log.warning(
+                    f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {layer} – Warte {delay // 60} Minuten. Fehler: {e}")
+                time.sleep(delay)
+        if not success:
             sub_log.error("Layer 2: Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
+            raise RuntimeError("WMS GetMap fehlgeschlagen nach mehreren Versuchen.")
 
         if "count" in extract_meta:
             sub_log.debug("meta count exists")  # ToDo: verify name !!!
@@ -571,7 +600,7 @@ def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, e
 
     return new_metadata, new_safetensor_dict
             
-def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
+def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_ids_file=None, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
@@ -678,11 +707,12 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
             sub_log.debug(shapefile_meta_folder)
             output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
 
-        lmdb_keys_prefixes = False
+        #lmdb_keys_prefixes = False
+        keys_to_process = pd.DataFrame(columns=["id", "prefix"])
         if lmdb_path:
             #print(1)
             current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
-            #print(current_lmdb)
+            """#print(current_lmdb)
             if os.path.exists(current_lmdb):
                 #print(2)
                 n_shapes = inLayer.GetFeatureCount()
@@ -692,10 +722,13 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
                 if n_keys_lmdb is None:
                     print(f"✅ LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
-                    return
+                    return"""
+            keys_to_process = key_parquet.read_existing_ids(all_ids_file, existing_ids_file)
+            #print(f"Keys to process: {keys_to_process}")
 
         metadata_list = []
         safetensor_dict = {}
+        id_key_df = pd.DataFrame(columns=["id", "prefix"])
 
         wms, wms_meta = None, None
         wms_version_used, wms_meta_version_used = None, None
@@ -715,22 +748,31 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
         if wms_meta_version_used:
             print(f" Meta data will download using WMS version: {wms_meta_version_used}")
 
+        keys_to_process_set = set(keys_to_process["id"].values)
         for feature in inLayer:
+            feature_id = feature.GetField("id")
+            #print(type(feature_id))
+            if feature_id not in keys_to_process_set:
+                print("skipping ", feature_id)
+                polygon += 1
+                polygon_progress.update(1)
+                continue
 
             seen_tiles = set()  # reset per polygon
 
-            print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+            print(f"\nProcessing polygon:  {polygon + 1} /{len(inLayer)} ({feature_id})")
             geom = feature.GetGeometryRef()
             extent = geom.GetEnvelope()
 
-            if lmdb_keys_prefixes != False:
+            feature_prefix = f"{int(extent[0])}_{int(extent[2])}"
+            """if lmdb_keys_prefixes != False:
                 minX, _, minY, _ = extent
-                feature_prefix = f"{int(minX)}_{int(minY)}"
+                "
                 if feature_prefix in lmdb_keys_prefixes:
                     print(f"{feature_prefix}_X exists and is skipped.")
                     polygon +=1
                     polygon_progress.update(1)
-                    continue
+                    continue"""
 
             if state == "BB_history":
                 years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
@@ -743,24 +785,30 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
             metadata_list.append(polygon_meta)
             safetensor_dict.update(new_safetensor_dict)
+            id_key_df = pd.concat([id_key_df, pd.DataFrame({"id":[feature_id], "prefix": [feature_prefix]})], ignore_index=True)
 
-            if polygon % 10 == 0 and polygon > 0 and parquet_path:
-                #if get_memory_usage_percent() >= 80 and polygon > 0:
+            if polygon % 1000 == 0 and polygon > 0 and parquet_path:
+                #if get_memory_usage_percent() >= 50 and polygon > 0:
                 if parquet_path:
                     print("write to parquet 1")
-                    file_name = f"meta_{polygon - 1000}-{polygon}.parquet"
+                    sub_log.info("write to parquet 1")
+                    file_name = f"meta_{polygon}-{polygon-1000}.parquet"
                     lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
                     metadata_list = []
                 if lmdb_path:
                     print("write to lmdb 1")
+                    sub_log.info("write to lmdb 1")
                     current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
                     lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
+                    key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+                    id_key_df = id_key_df[0:0]
                     safetensor_dict = {}
             polygon += 1
             polygon_progress.update(1)
 
         if parquet_path:
             print("write to parquet 2")
+            sub_log.info("write to parquet 2")
             file_name = f"meta_x-{polygon}.parquet"
             #print(shapefile_meta_folder)
             lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
@@ -768,7 +816,10 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
 
         if lmdb_path:
             print("write to lmdb 2")
+            sub_log.info("write to lmdb 2")
             lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
+            key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+            #id_key_df = id_key_df[0:0]
 
 
 def main(input):
@@ -816,9 +867,12 @@ def main(input):
     wms_calc = input['wms_calc']
     state = str(input['state'])
 
+    all_ids_file= input["all_ids_file"]
+    existing_ids_file= input["exisiting_ids_file"]
+
     # configure logger:
     subprocess_log_file = os.path.join(directory_path, log_file)
-    sub_log = func.config_logger("debug", subprocess_log_file)
+    sub_log = func.config_logger("info", subprocess_log_file)
 
 
     if AOI in [None, "None", "null", ""]:
@@ -862,7 +916,7 @@ def main(input):
                 # Check if it's a file and not a directory (optional, depending on your needs)
                 if os.path.isfile(file_path):
                     print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-                    process_file(file_path, output_wms_path, AOI=AOI, year=year)
+                    process_file(file_path, output_wms_path, all_ids_file=all_ids_file, existing_ids_file=existing_ids_file, AOI=AOI, year=year)
                     print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
                     sub_log.info(f"Execution time for  {filename}: {time.time() - starttime} seconds")
                     print(f"Execution time for  {filename}: {time.time() - starttime} seconds")

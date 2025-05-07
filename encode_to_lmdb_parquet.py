@@ -195,10 +195,10 @@ def merge_raster_to_safetensor(img, metadata, ir=None, acquisition_date=None):
 def write_dict_to_lmdb(safetensor_dict, path_to_lmdb):
 
     db = create_or_open_lmdb(path_to_lmdb)
-    print(len(safetensor_dict))
-    print(type(safetensor_dict))
+    #print(len(safetensor_dict))
+    #print(type(safetensor_dict))
     for key, item in safetensor_dict.items():
-        print("key")
+        #print("key")
         write_to_lmdb(db, key, item)
 
     print(f"✅ {len(safetensor_dict)} tiles gespeichert in lmdb")
@@ -282,15 +282,15 @@ def get_metadata(input):
 
 
 def write_meta_to_parquet(metadata, parquet_folder, file_name):
-    print(f"parquet folder in write_meta_to_parquet: {parquet_folder}")
-    print(type(parquet_folder), type(file_name))
+    #print(f"parquet folder in write_meta_to_parquet: {parquet_folder}")
+    #print(type(parquet_folder), type(file_name))
     output_parquet = os.path.join(parquet_folder,file_name)
-    print(output_parquet)
-    print(metadata)
+    #print(output_parquet)
+    #print(metadata)
     df = pd.DataFrame(metadata) # ToDo: flatten weg?
 
     df.set_index("lmdb_key", inplace=True)
-    print(df)
+    #print(df)
     df.to_parquet(output_parquet, index=True)
     print(f"Metadaten gespeichert in: {output_parquet}")
 
@@ -330,14 +330,18 @@ def read_all_from_lmdb(path_to_lmdb):
 
     # LMDB im Read-Only-Modus öffnen
     db = lmdb.open(path_to_lmdb, readonly=True)
-
+    counter = 0
     with db.begin() as txn:
         cursor = txn.cursor()
         for key, value in cursor:
+            if counter <= 20000 or counter > 20200:
+                counter += 1
+                continue
             key_str = key.decode()  # Key (TIFF-Name) als String
             safetensor_data = load(value)  # Safetensor-Daten dekodieren
-            #print(safetensor_data)
+            #print(key_str)
             all_data[key_str] = safetensor_data
+            counter +=1
 
     db.close()
     return all_data
@@ -347,7 +351,7 @@ def read_all_from_lmdb(path_to_lmdb):
 def print_bands_in_lmdb(path_to_lmdb):
 
     all_data = read_all_from_lmdb(path_to_lmdb)
-    print(all_data)
+    #print(all_data)
 
     print("🔑 Gespeicherte Keys & Bänder in LMDB:")
     for tif_name, bands in all_data.items():
@@ -366,8 +370,8 @@ def read_all_from_parquet(path_to_parquet):
 
 def read_key_from_parquet(key, path_to_parquet):
     parquet_df = pd.read_parquet(path_to_parquet)
-    #print(parquet_df.head())
-    #print(parquet_df.info())
+    print(parquet_df.head())
+    print(parquet_df.info())
     return parquet_df.loc[key].to_dict()
 
 
@@ -422,19 +426,28 @@ def lmdb_meta_to_tif(output_path, key, lmdb_path, parquet_path):
     meta_unflattened = unflatten_metadata(meta_dict)
     save_tif_with_lmdb_bands(output_path, bands_dict, meta_unflattened)
 
-path_to_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_tiles.lmdb"
-read_all_from_lmdb(path_to_lmdb)
-print_bands_in_lmdb(path_to_lmdb)
-path_to_parquet = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/parquet/test_tiles_meta_merged.parquet"
-read_all_from_parquet(path_to_parquet)
-lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test1_x4.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
+#path_to_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/test/test_spati_temp_ind_historic.lmdb"
+#read_all_from_lmdb(path_to_lmdb)
+#print_bands_in_lmdb(path_to_lmdb)
+#path_to_parquet = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/test/parquet/test_spati_temp_ind_historic_meta_merged.parquet"
+#read_all_from_parquet(path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/826943_5740103_lmdb.tif", "826943_5740103", path_to_lmdb, path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/735324_5299611_20220713.tif", "735324_5299611_20220713", path_to_lmdb, path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/533088_5305444_20220611.tif", "533088_5305444_20220611", path_to_lmdb, path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/919031_5681450_20220603.tif", "919031_5681450_20220603", path_to_lmdb, path_to_parquet)
+#lmdb_meta_to_tif("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/531592_5764227_20220322.tif", "531592_5764227_20220322", path_to_lmdb, path_to_parquet)
 
-
+"""
 path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles2.lmdb"
 read_all_from_lmdb(path_to_lmdb)
 print_bands_in_lmdb(path_to_lmdb)
 path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles2_meta_merged.parquet"
 read_all_from_parquet(path_to_parquet)
 lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_x4.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
-
-#513233_5966941
+"""
+#### test: ####
+#303098_5534815_20230527
+#735324_5299611_20220713
+#919031_5681450_20220603
+#533088_5305444_20220611
+#531592_5764227_20220322

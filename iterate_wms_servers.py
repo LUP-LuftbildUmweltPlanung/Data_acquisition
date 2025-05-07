@@ -11,7 +11,7 @@ main_log = func.config_logger("debug", log_file)
 
 
 try:
-    with open("pipeline_example.yaml", "r") as f:
+    with open("pipeline_example_test.yaml", "r") as f:
         jobs = yaml.safe_load(f)
 except (FileNotFoundError, yaml.YAMLError) as e:
     main_log.error(f"Can't read input YAML: {e}")

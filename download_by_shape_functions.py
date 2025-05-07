@@ -11,6 +11,7 @@ from shapely.wkt import loads
 import logging
 import logging.config
 import re
+import time
 
 def create_directory(path, name):
     """Create a directory if it doesn't exist yet"""
@@ -89,16 +90,31 @@ def get_acquisition_date(input_dict):
     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
 
     # Perform the GetFeatureInfo request
-    info = input_dict['wms_meta'].getfeatureinfo(
-            layers=[input_dict['layer_meta']],
-            srs=input_dict['epsg_code'],
-            bbox=(input_dict['x_min'], input_dict['y_min'], input_dict['x_max'], input_dict['y_max']),
-            size=(int(round(input_dict['x_max'] - input_dict['x_min']) / input_dict['r_aufl']), int(round(input_dict['y_max'] - input_dict['y_min']) / input_dict['r_aufl'])),
-            format=input_dict['format'],
-            query_layers=[input_dict['layer_meta']],
-            xy=(centroid_x,centroid_y),
-            info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
-        )
+    retry_delays = [60, 600, 1800, 3600]
+    success = False
+    for attempt, delay in enumerate(retry_delays):
+        try:
+            info = input_dict['wms_meta'].getfeatureinfo(
+                layers=[input_dict['layer_meta']],
+                srs=input_dict['epsg_code'],
+                bbox=(input_dict['x_min'], input_dict['y_min'], input_dict['x_max'], input_dict['y_max']),
+                size=(int(round(input_dict['x_max'] - input_dict['x_min']) / input_dict['r_aufl']),
+                      int(round(input_dict['y_max'] - input_dict['y_min']) / input_dict['r_aufl'])),
+                format=input_dict['format'],
+                query_layers=[input_dict['layer_meta']],
+                xy=(centroid_x, centroid_y),
+                info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
+            )
+            success = True
+            break  # Wenn erfolgreich, verlasse die Schleife
+        except Exception as e:
+            print(f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {[input_dict['layer_meta']]} – Warte {delay // 60} Minuten. Fehler: {e}")
+            time.sleep(delay)
+    if not success:
+        print("Layer 2: Can't get acquisitin date for layer %s from : %s" % ([input_dict['layer_meta']], input_dict['wms_meta']))
+        raise RuntimeError("WMS GetMap fehlgeschlagen nach mehreren Versuchen.")
+
+
     info_output = info.read()
 
     bildflug_date = extract_and_format_date(info_output)
