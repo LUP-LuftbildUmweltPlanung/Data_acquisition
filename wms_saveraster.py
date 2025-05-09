@@ -13,6 +13,7 @@ from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
 from pathlib import Path
+import gc
 
 import encode_to_lmdb_parquet as lmdb_fkt
 import psutil
@@ -786,6 +787,9 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             metadata_list.append(polygon_meta)
             safetensor_dict.update(new_safetensor_dict)
             id_key_df = pd.concat([id_key_df, pd.DataFrame({"id":[feature_id], "prefix": [feature_prefix]})], ignore_index=True)
+            del polygon_meta
+            del new_safetensor_dict
+            gc.collect()
 
             if polygon % 1000 == 0 and polygon > 0 and parquet_path:
                 #if get_memory_usage_percent() >= 50 and polygon > 0:
@@ -794,7 +798,7 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                     sub_log.info("write to parquet 1")
                     file_name = f"meta_{polygon}-{polygon-1000}.parquet"
                     lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-                    metadata_list = []
+                    #metadata_list = []
                 if lmdb_path:
                     print("write to lmdb 1")
                     sub_log.info("write to lmdb 1")
@@ -802,7 +806,18 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                     lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
                     key_parquet.update_existing_ids(id_key_df, existing_ids_file)
                     id_key_df = id_key_df[0:0]
-                    safetensor_dict = {}
+                    #safetensor_dict = {}
+                del metadata_list
+                del safetensor_dict
+                del polygon_meta
+                del new_safetensor_dict
+                del id_key_df
+                gc.collect()
+
+                metadata_list = []
+                safetensor_dict = {}
+                pd.DataFrame(columns=["id", "prefix"])
+                #gc.collect()
             polygon += 1
             polygon_progress.update(1)
 
@@ -820,7 +835,12 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
             key_parquet.update_existing_ids(id_key_df, existing_ids_file)
             #id_key_df = id_key_df[0:0]
-
+        del metadata_list
+        del safetensor_dict
+        del polygon_meta
+        del new_safetensor_dict
+        del id_key_df
+        gc.collect()
 
 def main(input):
     """Initialize global input variables and loop over files in input directory"""

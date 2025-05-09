@@ -9,10 +9,13 @@ import lmdb
 def count_lmdb_keys_and_prefixes(path_to_lmdb):
     env = lmdb.open(path_to_lmdb, readonly=True)
     prefixes = set()
-
+    counter = 0
     with env.begin() as txn:
         with txn.cursor() as cursor:
             prefixes.update(f"{key.decode().split('_')[0]}_{key.decode().split('_')[1]}" for key, _ in cursor)
+            if counter % 1000 == 0:
+                print(counter)
+            counter +=1
         return prefixes
 
 """       
@@ -66,9 +69,9 @@ def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parque
 
 start = time.time()
 #result = count_lmdb_keys_and_prefixes("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/test_temp_ind_noHH_with_vali_samples.lmdb")
-all_ids_file = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train_all_keys.parquet"
-existing_keys_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.lmdb"
-output_parquet_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/train_existing_keys.parquet"
+all_ids_file = "/home/embedding/Data_Center/Vera/full_train_all_keys.parquet"
+existing_keys_lmdb = "/home/embedding/Data_Center/Vera/full_train.lmdb"
+output_parquet_path = "/home/embedding/Data_Center/Vera/train_existing_keys.parquet"
 write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parquet_path)
 #print(result)
 
