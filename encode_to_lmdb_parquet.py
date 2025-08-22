@@ -594,6 +594,34 @@ def shape_id_to_tif(id_parquet, reconstruction, shape_ids, path_to_meta, main_ou
         print(elem)
         lmdb_meta_to_tif(out_file, lmdb_key, reconstruction, path_to_meta)
 
+def read_existing_ids(all_ids_file, existing_ids_file=None):
+    all_ids = pd.read_parquet(all_ids_file)
+    #print(all_ids)
+    #print(all_ids.info())
+    if existing_ids_file and os.path.exists(existing_ids_file):
+        processed_ids_set = set(pd.read_parquet(existing_ids_file)["id"])
+        #print(processed_ids_set)
+        to_process = all_ids[~all_ids["id"].isin(processed_ids_set)] # all ids that need to be processed
+        #to_process = all_ids[all_ids["id"].isin(processed_ids_set)] # all ids that have been processed
+
+        print(to_process.info())
+        print(len(to_process["prefix"]))
+        return to_process
+    return all_ids
+
+def update_existing_ids(new_processed_ids, existing_keys_file):
+
+    # Lade die alte Datei mit verarbeiteten IDs
+    if os.path.exists(existing_keys_file):
+        existing_processed_ids = pd.read_parquet(existing_keys_file)
+
+        # Füge die neuen IDs hinzu
+        updated_processed_ids = pd.concat([existing_processed_ids, new_processed_ids], ignore_index=True)
+    else:
+        updated_processed_ids = new_processed_ids.copy()
+
+    # Speichern der erweiterten Liste
+    updated_processed_ids.to_parquet(existing_keys_file, index=False)
 
 #path_to_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/test/test_spati_temp_ind_historic.lmdb"
 #read_all_from_lmdb(path_to_lmdb)

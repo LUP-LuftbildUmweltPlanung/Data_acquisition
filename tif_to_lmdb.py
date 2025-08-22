@@ -35,7 +35,7 @@ import tempfile
 import encode_to_lmdb_parquet as lmdb_fkt
 #import copy_hist_dops as copy_dops
 import download_by_shape_functions as func
-import create_key_parquet as key_parquet
+#import create_key_parquet as key_parquet
 #from test import feature_prefix
 
 
@@ -485,7 +485,7 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
     shapefile_meta_folder = func.create_directory(parquet_path, str(Path(shapefile_name).stem))
     output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
 
-    keys_to_process = key_parquet.read_existing_ids(all_ids_file, existing_ids_file)
+    keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
     #exit()
     keys_to_process_set = set(keys_to_process["id"].values)
 
@@ -683,7 +683,7 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
                 print(len(safetensor_dict))
                 current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
                 lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-                key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+                lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
                 id_key_df = id_key_df[0:0]
                 # process_tiff_folder(final_file_names, current_lmdb)
                 #safetensor_dict = {}
@@ -716,7 +716,7 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
         print(len(safetensor_dict))
         current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
         lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-        key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+        lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
 
     del metadata_list
     del safetensor_dict

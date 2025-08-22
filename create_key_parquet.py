@@ -6,11 +6,10 @@ from tqdm import tqdm
 import time
 import lmdb
 
-from encode_to_lmdb_parquet import count_lmdb_keys_and_prefixes, count_lmdb_keys_and_prefixes_2
+import encode_to_lmdb_parquet as lmdb_fkt
 
-
+"""
 def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
-    """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
     # sub_log.debug("Processing shape file: %s" % shapefile_path)
 
@@ -49,8 +48,9 @@ def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
     df = pd.DataFrame(records)
     print(df)
     #df.to_parquet(output_parquet, index=False)
+"""
 
-def read_existing_ids(all_ids_file, existing_ids_file=None):
+"""def read_existing_ids(all_ids_file, existing_ids_file=None):
     all_ids = pd.read_parquet(all_ids_file)
     #print(all_ids)
     #print(all_ids.info())
@@ -64,6 +64,7 @@ def read_existing_ids(all_ids_file, existing_ids_file=None):
         print(len(to_process["prefix"]))
         return to_process
     return all_ids
+"""
 
 def write_existing_ids_from_parquet(all_ids_file, existing_keys_parquet, output_parquet_path):
     df = pd.read_parquet(existing_keys_parquet)[["crs"]]  # nur 'crs'
@@ -96,7 +97,7 @@ def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parque
 
     print(all_ids)
 
-    n_keys, prefixes = count_lmdb_keys_and_prefixes(existing_keys_lmdb, len(all_ids))
+    n_keys, prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes(existing_keys_lmdb, len(all_ids))
     if n_keys == None and prefixes == None:
         print("all keys exist")
         return
@@ -113,7 +114,7 @@ def write_existing_ids_from_lmdb_2(all_ids_file, existing_keys_lmdb, output_parq
 
     #print(all_ids)
 
-    prefixes = count_lmdb_keys_and_prefixes_2(existing_keys_lmdb)
+    prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes_2(existing_keys_lmdb)
     #if len(all_ids) == len(prefixes):
     #    print("all keys exist")
     #    return
@@ -154,7 +155,7 @@ def get_ids_from_lmdb_keys(all_ids_file, existing_keys_lmdb, output_parquet_path
     print(f"{len(filtered_df)} Zeilen geschrieben nach {output_parquet_path}")
 
 
-def update_existing_ids(new_processed_ids, existing_keys_file):
+"""def update_existing_ids(new_processed_ids, existing_keys_file):
 
     # Lade die alte Datei mit verarbeiteten IDs
     if os.path.exists(existing_keys_file):
@@ -167,6 +168,7 @@ def update_existing_ids(new_processed_ids, existing_keys_file):
 
     # Speichern der erweiterten Liste
     updated_processed_ids.to_parquet(existing_keys_file, index=False)
+"""
 
 
 def write_all_ids_to_parquet(shapefile_path, parquet_path):
@@ -203,7 +205,7 @@ def write_all_ids_to_parquet(shapefile_path, parquet_path):
     df.to_parquet(parquet_path, index=False)
 
 def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
-    """Processes each shapefile either per polygon or as a whole if merge is enabled."""
+    """To create a parquet file with shape-id to lmdb_key mapping without processing the lmdb. Uses a parquet file instead."""
 
     #sub_log.debug("Processing shape file: %s" % shapefile_path)
     parquet_df = pd.DataFrame(columns=['lmdb_key', 'lmdb_prefix'])
@@ -247,62 +249,20 @@ def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
     df.to_parquet(output_parquet, index=False)
 
 def main(shapefile_path, parquet_path):
-
+    """Write all shape-ids with the respective prefix of the lmdb key into a parquet file."""
     starttime = time.time()
     write_all_ids_to_parquet(shapefile_path, parquet_path)
     print(f"Execution time for  {shapefile_path}: {time.time() - starttime} seconds")
 
-shapefile_path = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/shapes/test_spati_ind_combined_2.shp"
-input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/test/test_spatially_ind_combined.parquet"
-output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/test/test_spati_shape_ids_lmdb_keys.parquet"
-full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
+########## Example usage: ############
 
-shapefile_path = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/shapes/vali_spati_ind_combined_2.shp"
-input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_spatially_ind_combined.parquet"
-output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_spati_shape_ids_lmdb_keys.parquet"
-full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
+#shapefile_path = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles.shp"
+#parquet_path = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles_allkeys.parquet"
+#main(shapefile_path, parquet_path)
+#print(lmdb_fkt.read_existing_ids(parquet_path))
 
-shapefile_path = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/shapes/vali_spati_temp_ind_HH_with_test_swap.shp"
-input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_spati_temp_ind_HH_with_test_swap_meta_merged2.parquet"
-output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_spati_temp_shape_ids_lmdb_keys.parquet"
-full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
+### ... downloading data to lmdb and parquet ... ###
 
-shapefile_path = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/shapes/vali_temp_ind_HH_with_test_swap.shp"
-input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_temp_ind_HH_with_test_swap_meta_merged.parquet"
-output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/vali_temp_shape_ids_lmdb_keys.parquet"
-full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
-
-shapefile_path = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/shapes/full_train.shp"
-input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/train/full_train_meta_merged.parquet"
-output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/train/train_shape_ids_lmdb_keys.parquet"
-full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
-
-
-#shapefile_path = "/nne_mount/Vera/Data/shapes/shapes_final/test_spati_temp_ind_noHH_with_vali_samples.shp"
-#input_parquet = "/nne_mount/Vera/Data/Test/test_spati_temp_ind_noHH_with_vali_samples_meta_merged.parquet"
-#output_parquet = "/nne_mount/Vera/Data/Test/test_spati_temp_ind_all_shape_ids.parquet"
+#input_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/test/test_tiles_meta.parquet"
+#output_parquet = "/home/embedding/Data_Center/Vera/GFM_aerial_datasets/test/test_tiles_shape_ids_lmdb_keys.parquet"
 #full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
-
-
-#shapefile_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.shp"
-#parquet_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train_all_keys.parquet"
-
-"""
-shapefile_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali/results/vali_temp_ind_HH_with_test_swap.shp"
-parquet_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali/results/vali_temp_ind_HH_with_test_swap_allkeys.parquet"
-existing_keys_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali_temp_ind_HH_with_test_swap.lmdb"
-output_parquet_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali_temp_ind_HH_with_test_swap_exisiting.parquet"
-main(shapefile_path, parquet_path)
-#read_existing_ids(parquet_path, existing_ids_file="processed_ids.parquet")
-#read_existing_ids(parquet_path)
-#new_processed_ids = pd.DataFrame({"id":[341735], "prefix":["724054_5838980"]})
-#update_existing_ids(new_processed_ids,"processed_ids.parquet")
-
-#all_ids_file = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train_all_keys.parquet"
-#existing_keys_lmdb = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.lmdb"
-#output_parquet_path = "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train_all_existing_keys.parquet"
-
-
-write_existing_ids_from_lmdb(parquet_path, existing_keys_lmdb, output_parquet_path)
-
-"""

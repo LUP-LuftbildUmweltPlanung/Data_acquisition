@@ -18,7 +18,7 @@ import gc
 import encode_to_lmdb_parquet as lmdb_fkt
 import psutil
 
-import create_key_parquet as key_parquet
+#import create_key_parquet as key_parquet
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
@@ -471,7 +471,7 @@ def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, e
 
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
-
+    sub_log.debug(f"reduce_p_factor: {reduce_p_factor}")
 
     if reduce_p_factor > 1 and lmdb_path is None:
         print(f"Extracting raster data from wms ({reduce_p_factor ** 2} parts) ...")
@@ -602,76 +602,118 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
         epsg_code_int = 25833
         epsg_code = "EPSG:25833"
 
-    if merge and not lmdb_path: # ToDo longterm: add lmdb application for merging!!!
-        print(" Merging mode enabled: using full shapefile extent")
+    if not lmdb_path: # ToDo longterm: add lmdb application for merging!!!
+        if merge:
+            print(" Merging mode enabled: using full shapefile extent")
 
-        wms, wms_meta = None, None
-        wms_version_used, wms_meta_version_used = None, None
+            wms, wms_meta = None, None
+            wms_version_used, wms_meta_version_used = None, None
 
-        if wms_calc:
-            wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
-            if wms is None:
-                sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+            if wms_calc:
+                wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+                if wms is None:
+                    sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
 
-        if meta_calc:
-            wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
-            if wms_meta is None:
-                sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+            if meta_calc:
+                wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+                if wms_meta is None:
+                    sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
 
-        if wms_version_used:
-            print(f" Data will download using WMS version: {wms_version_used}")
-        if wms_meta_version_used:
-            print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+            if wms_version_used:
+                print(f" Data will download using WMS version: {wms_version_used}")
+            if wms_meta_version_used:
+                print(f" Meta data will download using WMS version: {wms_meta_version_used}")
 
-        seen_tiles = set()
+            seen_tiles = set()
 
-        # Union all polygons to get the full extent
-        full_geom = None
-        x_min, y_min, x_max, y_max = None, None, None, None
+            # Union all polygons to get the full extent
+            full_geom = None
+            x_min, y_min, x_max, y_max = None, None, None, None
 
-        for i, feature in enumerate(inLayer):
-            geom = feature.GetGeometryRef().Clone()
-            extent = geom.GetEnvelope()
+            for i, feature in enumerate(inLayer):
+                geom = feature.GetGeometryRef().Clone()
+                extent = geom.GetEnvelope()
 
-            # Update bounds
-            if x_min is None:
-                x_min, y_min, x_max, y_max = extent[0], extent[2], extent[1], extent[3]
-            else:
-                x_min = min(x_min, extent[0])
-                y_min = min(y_min, extent[2])
-                x_max = max(x_max, extent[1])
-                y_max = max(y_max, extent[3])
+                # Update bounds
+                if x_min is None:
+                    x_min, y_min, x_max, y_max = extent[0], extent[2], extent[1], extent[3]
+                else:
+                    x_min = min(x_min, extent[0])
+                    y_min = min(y_min, extent[2])
+                    x_max = max(x_max, extent[1])
+                    y_max = max(y_max, extent[3])
 
-            # Combine geometries
-            if full_geom is None:
-                full_geom = geom
-            else:
-                full_geom = full_geom.Union(geom)
+                # Combine geometries
+                if full_geom is None:
+                    full_geom = geom
+                else:
+                    full_geom = full_geom.Union(geom)
 
-        output_file_name_n = output_file_name.split(".")[0]
+            output_file_name_n = output_file_name.split(".")[0]
 
-        polygon_processing(wms, wms_meta, full_geom, output_wms_path, output_file_name_n,
-                           epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
+            polygon_processing(wms, wms_meta, full_geom, output_wms_path, output_file_name_n,
+                               epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
 
-        # ADD HERE
-        #base_filename = os.path.splitext(shapefile_name)[0]
-        base_filename = output_file_name_n
-        dop_folder_path = os.path.join(output_wms_path, "dop")
-        meta_folder_path = os.path.join(output_wms_path, "meta")
+            # ADD HERE
+            #base_filename = os.path.splitext(shapefile_name)[0]
+            base_filename = output_file_name_n
+            dop_folder_path = os.path.join(output_wms_path, "dop")
+            meta_folder_path = os.path.join(output_wms_path, "meta")
 
-        try:
-            print(f"Merging DOP for shapefile: {base_filename}")
-            merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
-            print(" DOP merge done.")
-        except Exception as e:
-            print(f" Failed to merge DOP for {base_filename}: {e}")
+            try:
+                print(f"Merging DOP for shapefile: {base_filename}")
+                merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
+                print(" DOP merge done.")
+            except Exception as e:
+                print(f" Failed to merge DOP for {base_filename}: {e}")
 
-        try:
-            print(f" Merging META for shapefile: {base_filename}")
-            merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
-            print(" META merge done.")
-        except Exception as e:
-            print(f" Failed to merge META for {base_filename}: {e}")
+            try:
+                print(f" Merging META for shapefile: {base_filename}")
+                merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
+                print(" META merge done.")
+            except Exception as e:
+                print(f" Failed to merge META for {base_filename}: {e}")
+        else:
+            print(" Merging mode disabled: processing polygons separately")
+            polygon = 0
+            polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
+
+            wms, wms_meta = None, None
+            wms_version_used, wms_meta_version_used = None, None
+
+            if wms_calc:
+                wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+                if wms is None:
+                    sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+            if meta_calc:
+                wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+                if wms_meta is None:
+                    sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+            if wms_version_used:
+                print(f" Data will download using WMS version: {wms_version_used}")
+            if wms_meta_version_used:
+                print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
+            for feature in inLayer:
+                seen_tiles = set()  # reset per polygon
+
+                print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+                geom = feature.GetGeometryRef()
+                extent = geom.GetEnvelope()
+
+                if state == "BB_history":
+                    years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
+                    output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}_{years}"
+                else:
+                    output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
+
+                polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name_n,
+                                   epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
+
+                polygon += 1
+                polygon_progress.update(1)
 
     else:
         polygon = 0
@@ -701,7 +743,7 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                 if n_keys_lmdb is None:
                     print(f"LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
                     return"""
-            keys_to_process = key_parquet.read_existing_ids(all_ids_file, existing_ids_file)
+            keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
             #print(f"Keys to process: {keys_to_process}")
 
         metadata_list = []
@@ -781,7 +823,7 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                     sub_log.info("write to lmdb 1")
                     current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
                     lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-                    key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+                    lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
                     id_key_df = id_key_df[0:0]
                     #safetensor_dict = {}
                 del metadata_list
@@ -810,7 +852,7 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             print("write to lmdb 2")
             sub_log.info("write to lmdb 2")
             lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-            key_parquet.update_existing_ids(id_key_df, existing_ids_file)
+            lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
             #id_key_df = id_key_df[0:0]
         del metadata_list
         del safetensor_dict
