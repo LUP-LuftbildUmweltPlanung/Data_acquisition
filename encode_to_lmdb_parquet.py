@@ -132,6 +132,31 @@ def count_lmdb_keys_and_prefixes(path_to_lmdb, n_shapes):
         else:
             return None, None
 
+def count_lmdb_keys_and_prefixes_2(path_to_lmdb):
+    env = lmdb.open(path_to_lmdb, readonly=True)
+    prefixes = set()
+    counter = 0
+    with env.begin() as txn:
+        with txn.cursor() as cursor:
+            #prefixes.update(f"{key.decode().split('_')[0]}_{key.decode().split('_')[1]}" for key, _ in cursor)
+            prefixes.update(key for key, _ in cursor)
+            if counter % 1000 == 0:
+                print(counter)
+            counter +=1
+        return prefixes
+
+def count_lmdb_keys_and_prefixes_3(path_to_lmdb):
+    env = lmdb.open(path_to_lmdb, readonly=True)
+    prefixes = set()
+    counter = 0
+    with env.begin() as txn:
+        with txn.cursor() as cursor:
+            prefixes.update(f"{key.decode().split('_')[0]}_{key.decode().split('_')[1]}" for key, _ in cursor)
+            if counter % 1000 == 0:
+                print(counter)
+            counter +=1
+        return prefixes
+
 def merge_raster_to_lmdb(img, path_to_lmdb, metadata, ir=None, acquisition_date=None):
 
     db = create_or_open_lmdb(path_to_lmdb)

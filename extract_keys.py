@@ -3,50 +3,7 @@ import time
 import pandas as pd
 import lmdb
 
-#from create_key_parquet_copy import all_ids_file, existing_keys_lmdb, output_parquet_path
-
-
-def count_lmdb_keys_and_prefixes_3(path_to_lmdb):
-    env = lmdb.open(path_to_lmdb, readonly=True)
-    prefixes = set()
-    counter = 0
-    with env.begin() as txn:
-        with txn.cursor() as cursor:
-            prefixes.update(f"{key.decode().split('_')[0]}_{key.decode().split('_')[1]}" for key, _ in cursor)
-            if counter % 1000 == 0:
-                print(counter)
-            counter +=1
-        return prefixes
-
-"""       
-def count_lmdb_keys_and_prefixes(path_to_lmdb, n_shapes):
-
-    # Öffne die LMDB-Datenbank im Lese-Modus
-    env = lmdb.open(path_to_lmdb, readonly=True, lock=False, readahead=False, max_readers=1)
-
-    prefixes = set()
-    n_keys = 0
-
-    # Beginne eine Transaktion
-    with env.begin() as txn:
-        # Zähle die Anzahl der Einträge in der LMDB-Datenbank
-        with txn.cursor() as cursor:
-            for key, _ in cursor:
-                parts = key.decode().split("_")[:2]
-                prefix = f"{parts[0]}_{parts[1]}"
-                prefixes.add(prefix)
-                n_keys += 1
-
-                # Wenn genügend Prefixes extrahiert wurden, beende die Schleife
-                if n_keys >= n_shapes:
-                    break
-
-    # Wenn die Anzahl der Keys kleiner als n_shapes ist, geben wir n_keys und die Prefixes zurück
-    if n_keys < n_shapes:
-        return n_keys, prefixes
-    else:
-        return None, None
-"""
+from encode_to_lmdb_parquet import count_lmdb_keys_and_prefixes_3
 
 def write_existing_ids_from_lmdb_3(all_ids_file, existing_keys_lmdb, output_parquet_path):
     all_ids = pd.read_parquet(all_ids_file)

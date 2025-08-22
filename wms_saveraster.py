@@ -699,7 +699,7 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                 #print(n_keys_lmdb)
 
                 if n_keys_lmdb is None:
-                    print(f"✅ LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
+                    print(f"LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
                     return"""
             keys_to_process = key_parquet.read_existing_ids(all_ids_file, existing_ids_file)
             #print(f"Keys to process: {keys_to_process}")
@@ -786,14 +786,14 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                     #safetensor_dict = {}
                 del metadata_list
                 del safetensor_dict
-                del polygon_meta
-                del new_safetensor_dict
-                del id_key_df
+                #del polygon_meta
+                #del new_safetensor_dict
+                #del id_key_df
                 gc.collect()
 
                 metadata_list = []
                 safetensor_dict = {}
-                pd.DataFrame(columns=["id", "prefix"])
+                #pd.DataFrame(columns=["id", "prefix"])
                 #gc.collect()
             polygon += 1
             polygon_progress.update(1)
@@ -814,8 +814,8 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             #id_key_df = id_key_df[0:0]
         del metadata_list
         del safetensor_dict
-        del polygon_meta
-        del new_safetensor_dict
+        #del polygon_meta
+        #del new_safetensor_dict
         del id_key_df
         gc.collect()
 
