@@ -21,11 +21,6 @@ import psutil
 import create_key_parquet as key_parquet
 
 
-
-def get_memory_usage_percent():
-    return psutil.virtual_memory().percent
-
-
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
     """Creates a raster file with one band that contains the acquisition date of every pixel"""
     if img_width is not None and img_height is not None and r_aufl is not None:
@@ -316,24 +311,6 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         print("Failed to open the TIFF file %s." %output_file_path)
 
 
-def get_tile_bounds(file_path):
-    """Extract bounding box from a single TIFF file."""
-    ds = gdal.Open(file_path)
-    gt = ds.GetGeoTransform()
-    min_x = gt[0]
-    max_y = gt[3]
-    max_x = min_x + (ds.RasterXSize * gt[1])
-    min_y = max_y + (ds.RasterYSize * gt[5])
-    ds = None
-    return (min_x, min_y, max_x, max_y)
-
-def sort_files_by_spatial_proximity(input_files):
-    """Sort files based on their spatial proximity."""
-    tile_bounds = [(f, get_tile_bounds(f)) for f in input_files]
-    # Sort by min_x and then by min_y to ensure proximity
-    sorted_files = sorted(tile_bounds, key=lambda x: (x[1][0], x[1][1]))
-    return [f[0] for f in sorted_files]
-
 def get_nodata_from_raster(raster_path):
     ds = gdal.Open(raster_path)
     if ds is not None and ds.GetRasterBand(1) is not None:
@@ -371,7 +348,7 @@ def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AO
     if not input_files:
         raise FileNotFoundError(f"No TIFFs found in {input_dir} for type '{file_type}'")
 
-    input_files = sort_files_by_spatial_proximity(input_files)
+    input_files = func.sort_files_by_spatial_proximity(input_files)
     print(f" Total input files: {len(input_files)}")
 
     # Construct suffix for output file

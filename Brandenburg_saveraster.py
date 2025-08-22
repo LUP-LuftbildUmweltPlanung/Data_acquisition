@@ -32,31 +32,6 @@ def get_input_EPSG(shapefile_path):
     return epsg
 
 
-def transform_extent_to_EPSG25833(geom, source_epsg_int):
-    """ Transform the geom of the given shape file to the target EPSG of the output files"""
-    # Define the target spatial reference (EPSG:25833)
-    targetSRS = osr.SpatialReference()
-    targetSRS.ImportFromEPSG(target_epsg_int)
-
-    sourceSRS = osr.SpatialReference()
-    sourceSRS.ImportFromEPSG(source_epsg_int)
-
-    # Check if the source spatial reference system is different from EPSG:25833
-    if not sourceSRS.IsSame(targetSRS):
-        # Create a coordinate transformation to EPSG:25833
-        coordTrans = osr.CoordinateTransformation(sourceSRS, targetSRS)
-
-        # Transform geom and get extent
-        geom.Transform(coordTrans)
-        extent = geom.GetEnvelope()
-
-    else:
-        # If the SRS is already EPSG:25833, return the original extent
-        extent = geom.GetEnvelope()
-
-    return extent[0], extent[1], extent[2], extent[3], geom
-
-
 def merge_rasters(folder_path, output_file, tif_list, file_type, output_crs='EPSG:25833'):
     """Merge all .tif files in the specified folder into a single raster file with the specified CRS.
 
@@ -300,7 +275,7 @@ def process_file(shapefile_path):
 
         geom = feature.GetGeometryRef()
 
-        x_min, x_max, y_min, y_max, geom = transform_extent_to_EPSG25833(geom, source_epsg_int)
+        x_min, x_max, y_min, y_max, geom = func.transform_to_target_crs(geom, source_epsg_int, target_epsg_int)
         x_start, x_end, y_start, y_end = encode_coordinates(x_min, x_max, y_min, y_max)
 
         for file_type in ["dop", "bdom", "dgm"]:

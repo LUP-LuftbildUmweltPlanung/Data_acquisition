@@ -33,30 +33,11 @@ from rasterio.crs import CRS
 import tempfile
 
 import encode_to_lmdb_parquet as lmdb_fkt
-import copy_hist_dops as copy_dops
+#import copy_hist_dops as copy_dops
 import download_by_shape_functions as func
 import create_key_parquet as key_parquet
 #from test import feature_prefix
 
-
-
-
-
-"""
-def convert_geom_robust(ogr_geom):
-    if ogr_geom is None or ogr_geom.IsEmpty():
-        raise ValueError("Leere oder ungültige Geometrie")
-
-    try:
-        wkb_data = ogr_geom.ExportToWkb()
-        if isinstance(wkb_data, (bytearray, bytes)):
-            return from_wkb(bytes(wkb_data))  # <-- hier ist die Lösung
-        else:
-            raise TypeError("ExportToWkb() returned unexpected type:", type(wkb_data))
-    except Exception as e:
-        print("Fallback to WKT:", e)
-        return from_wkt(ogr_geom.ExportToWkt())
-"""
 
 def read_tif_bands(tif_path):
     """
@@ -73,39 +54,6 @@ def read_tif_bands(tif_path):
             band_name = str(i)  # Beispiel: "B01", "B02", ...
             band_dict[band_name] = src.read(i)
     return key, band_dict
-
-
-#@profile
-def open_with_crs_fix_old(path, default_crs):
-    """
-    Öffnet eine TIFF-Datei und setzt das CRS, falls es fehlt.
-    Wenn CRS fehlt, wird es auf `default_crs` gesetzt, indem eine neue Datei im Memory erstellt wird.
-    """
-    src = rasterio.open(path)
-    formatted_date = read_metadata_and_date(path)
-    #print(formatted_date)
-
-    if src.crs is None:
-        #print(f"{path} hat kein CRS! Setze CRS auf {default_crs}.")
-
-        # Falls kein CRS vorhanden ist, erstelle eine neue Memory-Datei
-        memfile = MemoryFile()
-
-        # Setze das CRS, das transform und andere Metadaten
-        meta = src.meta.copy()
-        meta.update({
-            'crs': default_crs
-        })
-
-        # Öffne das MemoryFile ohne `with`, sodass es nicht sofort geschlossen wird
-        mem_ds = memfile.open(**meta)
-        # Schreibe die Daten mit dem neuen CRS in den MemoryFile
-        mem_ds.write(src.read())
-        src.close()
-        # Gib das Dataset zurück, ohne dass es im `with`-Block geschlossen wird
-        return mem_ds, formatted_date
-    else:
-        return src, formatted_date
 
 #@profile
 def open_with_crs_fix(path, default_crs):
@@ -139,29 +87,7 @@ def open_with_crs_fix(path, default_crs):
         return rasterio.open(temp_path), formatted_date, temp_path
     else:
         return src, formatted_date, None
-"""
-def reproject_array(array, transform, src_crs, dst_crs):
 
-    num_bands, height, width = array.shape
-    dst_transform, dst_width, dst_height = calculate_default_transform(
-        src_crs, dst_crs, width, height, *rasterio.transform.array_bounds(height, width, transform)
-    )
-
-    reprojected = np.zeros((num_bands, dst_height, dst_width), dtype=array.dtype)
-
-    for band in range(num_bands):
-        reproject(
-            source=array[band],
-            destination=reprojected[band],
-            src_transform=transform,
-            src_crs=src_crs,
-            dst_transform=dst_transform,
-            dst_crs=dst_crs,
-            resampling=Resampling.nearest
-        )
-
-    return reprojected, dst_transform
-"""
 
 def read_metadata_and_date(tif_path):
 
@@ -233,320 +159,6 @@ def read_metadata_and_date(tif_path):
         #print(f"Dateiname {os.path.basename(tif_path)} wurde nicht in der CSV gefunden. Using year instead")
     return formatted_date
 
-
-#@profile
-def read_tif_bands_clipped_old(rgb_paths, ir_paths, polygon, input_crs, shapefile_crs, orig_x_min, orig_y_min, year):
-    band_dict = {}
-    #print(rgb_paths)
-    #print(ir_paths)
-
-    # Öffne und mosiake RGB
-    src_rgb, acquisition_dates = zip(*[open_with_crs_fix(p, input_crs) for p in rgb_paths])
-
-    #print(1)
-
-    mosaic_rgb, transform_rgb = merge(src_rgb)
-
-    src_ir, ir_acquisition_dates = zip(*[open_with_crs_fix(p, input_crs) for p in ir_paths])
-
-    acquisition_date = next((int(date) for date in acquisition_dates if date is not None), None)
-    if acquisition_date is None:
-        acquisition_date = next((int(date) for date in ir_acquisition_dates if date is not None), None)
-
-    if acquisition_dates is None:
-        acquisition_date = int(year)
-
-    #print("acquisition_date: ",acquisition_date)
-
-    #print(f"2: {src_ir}")
-    mosaic_ir, transform_ir = merge(src_ir)
-
-    for ds in src_rgb + src_ir:
-        ds.close()
-
-
-    # Clip RGB
-    with MemoryFile() as memfile_rgb:
-        with memfile_rgb.open(
-            driver="GTiff",
-            height=mosaic_rgb.shape[1],
-            width=mosaic_rgb.shape[2],
-            count=3,
-            dtype=mosaic_rgb.dtype,
-            crs=input_crs,
-            transform=transform_rgb
-        ) as dataset_rgb:
-            for i in range(3):
-                dataset_rgb.write(mosaic_rgb[i], i+1)
-            clipped_rgb, clipped_transform = mask(dataset_rgb, [mapping(polygon)], crop=True, all_touched=True)
-    #print(4)
-    # Clip IR
-    with MemoryFile() as memfile_ir:
-        with memfile_ir.open(
-            driver="GTiff",
-            height=mosaic_ir.shape[1],
-            width=mosaic_ir.shape[2],
-            count=1,
-            dtype=mosaic_ir.dtype,
-            crs=input_crs,
-            transform=transform_ir
-        ) as dataset_ir:
-            dataset_ir.write(mosaic_ir[0], 1)
-            clipped_ir, clipped_transform_ir = mask(dataset_ir, [mapping(polygon)], crop=True, all_touched=True)
-    #print(5)
-    # Ziel-CRS vorbereiten
-    dst_crs = pyproj.CRS(shapefile_crs)
-
-    #print(f"6: {dst_crs}")
-
-    pixel_size = 0.2  # 20 cm
-    out_shape = (384, 384)
-
-    # Bounding box im Ziel-Koordinatensystem definieren (snap auf Grid)
-    tile_extent = pixel_size * 384  # 76.8 m
-
-
-    # Zieltransform (oben links)
-    dst_transform = Affine(pixel_size, 0, orig_x_min,
-                           0, -pixel_size,orig_y_min + tile_extent)
-
-    # RGB reprojizieren
-    dst_rgb = np.empty((3, out_shape[0], out_shape[1]), dtype=clipped_rgb.dtype)
-    for i in range(3):
-        reproject(
-            source=clipped_rgb[i],
-            destination=dst_rgb[i],
-            src_transform=clipped_transform,
-            src_crs=input_crs,
-            dst_transform=dst_transform,
-            dst_crs=dst_crs,
-            resampling=Resampling.nearest
-        )
-    #print("RGB-Min/Max after reproject:", dst_rgb.min(), dst_rgb.max())
-    # IR reprojizieren
-    dst_ir = np.empty((1, out_shape[0], out_shape[1]), dtype=clipped_ir.dtype)
-    reproject(
-        source=clipped_ir[0],
-        destination=dst_ir[0],
-        src_transform=clipped_transform_ir,
-        src_crs=input_crs,
-        dst_transform=dst_transform,
-        dst_crs=dst_crs,
-        resampling=Resampling.nearest
-    )
-
-    # Ergebnis speichern
-    band_dict["1"] = dst_rgb[0].copy()
-    band_dict["2"] = dst_rgb[1].copy()
-    band_dict["3"] = dst_rgb[2].copy()
-    band_dict["4"] = dst_ir[0].copy()
-
-    # BoundingBox berechnen (im Ziel-CRS)
-    height, width = out_shape
-    left, bottom, right, top = array_bounds(height, width, dst_transform)
-
-    key = f"{int(left)}_{int(bottom)}_{acquisition_date}"
-
-    meta = {
-        "crs": dst_crs.to_string(),
-        "transform": dst_transform,
-        "width": width,
-        "height": height,
-        "count": 4,
-        "dtype": dst_rgb.dtype.name,
-        "res": (pixel_size, pixel_size),
-        "bounds": BoundingBox(left=left, bottom=bottom, right=right, top=top),
-        "acquisition": acquisition_date,
-        "lmdb_key": key,
-        "rgb_paths": rgb_paths,
-        "ir_paths": ir_paths
-    }
-
-    del mosaic_rgb, mosaic_ir, clipped_rgb, clipped_ir, dst_rgb, dst_ir
-    memfile_rgb = None
-    memfile_ir = None
-    gc.collect()
-
-    return key, band_dict, lmdb_fkt.flatten_metadata(meta)
-
-"""
-#@profile
-def read_tif_bands_clipped(rgb_paths, ir_paths, polygon, input_crs, shapefile_crs, orig_x_min, orig_y_min, year):
-
-    print(input_crs)
-
-    band_dict = {}
-
-    # Ziel-CRS vorbereiten
-    dst_crs = pyproj.CRS(shapefile_crs)
-    pixel_size = 0.2  # 20 cm
-    out_shape = (384, 384)
-
-    tile_extent = pixel_size * 384
-
-    dst_transform = Affine(pixel_size, 0, orig_x_min,
-                           0, -pixel_size, orig_y_min + tile_extent)
-
-    # Leere RGB- und IR-Arrays vorbereiten
-    dst_rgb = np.zeros((3, out_shape[0], out_shape[1]), dtype=np.uint8)
-    dst_ir = np.zeros((1, out_shape[0], out_shape[1]), dtype=np.uint8)
-
-    acquisition_date = None
-    # Reprojection jeder RGB-Datei einzeln
-    for path in rgb_paths:
-        src, date = open_with_crs_fix(path, input_crs)
-        dst_transform_img, img_width, img_height = calculate_default_transform(
-            src.crs, dst_crs, src.width, src.height, *src.bounds
-        )
-
-        if img_width <= 0 or img_height <= 0:
-            print(f"Skipping {path}: invalid dimensions after reprojection.")
-            continue
-
-        # Offset im Zielarray berechnen
-        col_off = int((dst_transform_img.c - orig_x_min) / pixel_size)
-        row_off = int((orig_y_min + tile_extent - dst_transform_img.f) / pixel_size)
-
-        max_rows, max_cols = out_shape
-        col_start = max(col_off, 0)
-        row_start = max(row_off, 0)
-        col_end = min(col_off + img_width, max_cols)
-        row_end = min(row_off + img_height, max_rows)
-
-        # Bereich im temp-Array, der mit Zielraster überlappt
-        src_col_start = col_start - col_off
-        src_row_start = row_start - row_off
-        src_col_end = src_col_start + (col_end - col_start)
-        src_row_end = src_row_start + (row_end - row_start)
-
-        print(dst_transform_img.c)
-        print(col_off)
-        print(row_off)
-        print(dst_transform_img.f)
-        print(col_start)
-        print(row_start)
-        print(col_end)
-        print(row_end)
-        print(img_width)
-        print(img_height)
-        print(src_col_start)
-        print(src_row_start)
-        print(src_col_end)
-        print(src_row_end)
-
-        # Sicherheitsabfrage
-        if row_end <= row_start or col_end <= col_start:
-            print(f"Skipping {path}: no overlap with target raster.")
-            continue
-
-        # Reprojectiere in temporäres Array mit voller Größe
-        temp = np.zeros((3, img_height, img_width), dtype=np.uint8)
-        for band_i in range(1, 4):
-            reproject(
-                source=rasterio.band(src, band_i),
-                destination=temp[band_i - 1],
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=dst_transform_img,
-                dst_crs=dst_crs,
-                resampling=Resampling.nearest
-            )
-
-        # Nur den Bereich [0:write_height, 0:write_width] verwenden
-        dst_rgb[:, row_start:row_end, col_start:col_end] = temp[:, src_row_start:src_row_end, src_col_start:src_col_end]
-
-        if not acquisition_date:
-            acquisition_date = int(date)
-        src.close()
-
-    # Reprojection jeder IR-Datei einzeln
-    for path in ir_paths:
-        src, date = open_with_crs_fix(path, input_crs)
-        dst_transform_img, img_width, img_height = calculate_default_transform(
-            src.crs, dst_crs, src.width, src.height, *src.bounds
-        )
-
-        if img_width <= 0 or img_height <= 0:
-            print(f"Skipping {path}: invalid dimensions after reprojection.")
-            continue
-
-        # Offset im Zielarray berechnen
-        col_off = int((dst_transform_img.c - orig_x_min) / pixel_size)
-        row_off = int((orig_y_min + tile_extent - dst_transform_img.f) / pixel_size)
-
-        max_rows, max_cols = out_shape
-        col_start = max(col_off, 0)
-        row_start = max(row_off, 0)
-        col_end = min(col_off + img_width, max_cols)
-        row_end = min(row_off + img_height, max_rows)
-
-        # Bereich im temp-Array, der mit Zielraster überlappt
-        src_col_start = col_start - col_off
-        src_row_start = row_start - row_off
-        src_col_end = src_col_start + (col_end - col_start)
-        src_row_end = src_row_start + (row_end - row_start)
-
-        # Sicherheitsabfrage
-        if row_end <= row_start or col_end <= col_start:
-            print(f"Skipping {path}: no overlap with target raster.")
-            continue
-
-        # Reprojectiere in temporäres Array mit voller Größe
-        temp_ir = np.zeros((img_height, img_width), dtype=np.uint8)
-        reproject(
-            source=rasterio.band(src, 1),
-            destination=temp_ir,
-            src_transform=src.transform,
-            src_crs=src.crs,
-            dst_transform=dst_transform_img,
-            dst_crs=dst_crs,
-            resampling=Resampling.nearest
-        )
-        #print(temp_ir)
-        dst_ir[0, row_start:row_end, col_start:col_end] = temp_ir[src_row_start:src_row_end, src_col_start:src_col_end]
-
-        if not acquisition_date:
-            acquisition_date = int(date)
-        src.close()
-
-    if acquisition_date is None:
-        acquisition_date = int(year)
-
-    # Ergebnisse als Kopien abspeichern
-    band_dict["1"] = dst_rgb[0].copy()
-    band_dict["2"] = dst_rgb[1].copy()
-    band_dict["3"] = dst_rgb[2].copy()
-    band_dict["4"] = dst_ir[0].copy()
-
-    # BoundingBox im Ziel-CRS berechnen
-    height, width = out_shape
-    left, bottom, right, top = array_bounds(height, width, dst_transform)
-    #bbox = BoundingBox(*bounds)
-
-    key = f"{int(left)}_{int(bottom)}_{acquisition_date}"
-
-    meta = {
-        "crs": dst_crs.to_string(),
-        "transform": dst_transform,
-        "width": width,
-        "height": height,
-        "count": 4,
-        "dtype": dst_rgb.dtype.name,
-        "res": (pixel_size, pixel_size),
-        "bounds": BoundingBox(left=left, bottom=bottom, right=right, top=top),
-        "acquisition": acquisition_date,
-        "lmdb_key": key,
-        "rgb_paths": rgb_paths,
-        "ir_paths": ir_paths
-    }
-
-    # Speicher bereinigen
-    del dst_rgb, dst_ir#, clipped_rgb, clipped_ir
-    gc.collect()
-
-    # Rückgabe
-    return key, band_dict, lmdb_fkt.flatten_metadata(meta)
-"""
 #@profile
 def read_tif_bands_clipped(rgb_paths, ir_paths, polygon, input_crs, shapefile_crs, orig_x_min, orig_y_min, year):
     #print(input_crs)
@@ -713,7 +325,7 @@ def process_tiff_folder(file_list, path_to_lmdb):
 
 
 def check_public_year_availability(state, key="public"):
-    state = copy_dops.get_state_code(state)
+    state = func.get_state_code(state)
 
     if key == "public":
         public_availability = {"bb": [year for year in list(range(2009,2018+1))+[2020]],
@@ -755,7 +367,7 @@ def define_hist_foldername(year):
         return None, None
 
 def get_state_and_crs_from_csv(state,year, format="rgb"):
-    state = copy_dops.get_state_code(state)
+    state = func.get_state_code(state)
     #print(state)
     if format == "rgb":
         df_ir = None
@@ -820,18 +432,18 @@ def create_hist_file_list(input_folder, year, state, x_start, x_end, y_start, y_
         print("unknown format")
         exit()
 
-    input_folder = copy_dops.find_state_folder(input_folder, year, state, epsg_int)
+    input_folder = func.find_state_folder(input_folder, year, state, epsg_int)
     file_names = []
 
     #file_names2 = []
 
     for folder in input_folder:
 
-        patch_lengths = copy_dops.check_consistent_number(folder)
+        patch_lengths = func.check_consistent_number(folder)
 
 
 
-        x_min, x_max, y_min, y_max = copy_dops.encode_coordinates(x_start, x_end, y_start, y_end)
+        x_min, x_max, y_min, y_max = func.encode_coordinates(x_start, x_end, y_start, y_end)
 
         for patch_length in patch_lengths:
             for x in range(x_min, x_max, patch_length):
@@ -860,241 +472,7 @@ def create_hist_file_list(input_folder, year, state, x_start, x_end, y_start, y_
     #print(file_names2)
     return file_names
 
-"""
-def check_parquet_lmdb(inlayer):
-    print("in check_parquet_lmdb")
 
-    shapefile_meta_folder = None
-    output_meta_file = None
-
-    _, shapefile_name = os.path.split(shapefile_path)
-    if parquet_path:
-        shapefile_meta_folder = func.create_directory(parquet_path, str(Path(shapefile_name).stem))
-        output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
-
-    lmdb_keys_prefixes = False
-
-    if lmdb_path:
-        current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
-        if os.path.exists(current_lmdb):
-            n_shapes = inlayer.GetFeatureCount()
-            n_keys_lmdb, lmdb_keys_prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes(current_lmdb, n_shapes)
-
-            if n_keys_lmdb is None:
-                print(f"LMDB seems to be complete. Skipping processing of {shapefile_name}")
-                return None, None, None, None
-    return lmdb_keys_prefixes, shapefile_name, shapefile_meta_folder, output_meta_file
-
-
-
-def process_rgbi_shapefile():
-    driver = ogr.GetDriverByName('ESRI Shapefile')
-    dataSource = driver.Open(shapefile_path, 0)  # 0 means read-only.
-    layer = dataSource.GetLayer()
-
-    lmdb_keys_prefixes, shapefile_name, shapefile_meta_folder, output_meta_file = check_parquet_lmdb(layer)
-    if lmdb_keys_prefixes is None and shapefile_name is None and shapefile_meta_folder is None and output_meta_file is None:
-        return
-
-    metadata_list = []
-    safetensor_dict = {}
-
-    sourceEPSG = layer.GetSpatialRef()
-
-    source_epsg_int = int(sourceEPSG.GetAttrValue("AUTHORITY", 1))
-
-    #final_file_names = []
-    print(len(layer))
-    polygon_counter = 0
-    for polygon in layer:
-
-        state = polygon.GetField("GEN")
-        print(polygon_counter, state)
-        polygon_id = polygon.GetField("id")
-
-        if polygon_counter > 7:
-            exit()
-
-
-
-        available_years = check_public_year_availability(state, key="vali")
-
-        if len(available_years) == 0:
-            log.info(f"No available data for any year for polygon: {polygon_id}")
-
-        print(available_years)
-        random.shuffle(available_years)
-        selected_folder = False
-        for year in available_years:
-
-            all_years_file_names = []
-            #print(year, state)
-            #target_crs, state = copy_dops.get_state_and_crs(state, year)
-            rgb_crs, ir_crs, short_state = get_state_and_crs_from_csv(state, year, "rgbi")
-
-            if rgb_crs is None or ir_crs is None:
-                print("sth is None")
-                continue
-            else:
-                print(year)
-
-
-
-            rgb_base_folder, ir_base_folder = define_hist_foldername(year)
-
-            rgb_folder = Path(input_dir) / rgb_base_folder / "DOP-Hist" / "RGB"
-            ir_folder = Path(input_dir) / ir_base_folder / "DOP-Hist" / "IR"
-
-            for target_crs in rgb_crs:
-                geom = polygon.GetGeometryRef()
-                orig_x_min, _, orig_y_min, _ = geom.GetEnvelope()
-
-                x_min, x_max, y_min, y_max, geom_clone = copy_dops.transform_to_target_crs(geom, source_epsg_int, target_crs)
-
-
-                if lmdb_keys_prefixes:
-                    feature_prefix = f"{int(orig_x_min)}_{int(orig_y_min)}"
-                    if feature_prefix in lmdb_keys_prefixes:
-                        print(f"{feature_prefix}_X exists and is skipped.")
-                        selected_folder == True
-                        break
-
-                print(f"rgb target_crs: {target_crs}, {x_min}, {y_min}")
-                rgb_file_names = create_hist_file_list(rgb_folder, year, short_state, x_min, x_max, y_min, y_max, target_crs)
-                print(rgb_file_names)
-
-                if rgb_file_names == []:
-                    print("rgb_file_names is []")
-                    continue
-
-                for elem in rgb_file_names:
-                    #print(elem)
-                    if not os.path.isfile(elem):
-                        print(f"remove file_name: {elem}")
-                        rgb_file_names.remove(elem)
-                    if not elem.endswith(".tif"):
-                        rgb_file_names.remove(elem)
-
-                shapely_polygon = from_wkb(bytes(geom_clone.ExportToWkb()))
-
-
-                coverage = None  # Initial kein Coverage
-
-                for f in rgb_file_names:
-                    with rasterio.open(f) as src:
-                        bounds = src.bounds
-                        img_geom = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
-                        if coverage is None:
-                            coverage = img_geom
-                        else:
-                            coverage = coverage.union(img_geom)
-
-                print("test1")
-
-
-                # Überprüfen ob das Polygon komplett innerhalb der Bilder liegt
-                if coverage.contains(shapely_polygon):
-                    print("test2")
-                    selected_folder = True
-                    #print(f"Ordner gefunden")
-
-                    final_ir_files = []
-
-                    ir_file_names = create_hist_file_list(ir_folder, year, short_state, x_min, x_max, y_min, y_max,
-                                                          target_crs)
-                    print(ir_file_names)
-                    if ir_file_names == []:
-                        selected_folder = False
-                        continue
-
-                    for elem in rgb_file_names:
-                        ir_name = elem.replace("rgb", "ir")
-                        ir_name = ir_name.replace("RGB","IR" )
-                        ir_name = ir_name.replace(fr"/{rgb_base_folder}/D", fr"/{ir_base_folder}/D")
-                        print(elem)
-                        print(ir_name)
-                        if ir_name in ir_file_names:
-                            if final_ir_files != []:
-                                #print(f"file_name: {elem}")
-                                final_ir_files.append(ir_name)
-
-                                ########## ToDo: write coverage to lmdb
-                                #break
-
-                            else:
-                                #print(f"first_entry")
-                                final_ir_files = [ir_name]
-                                #break
-                                #selected_folder = False
-                        else:
-                            selected_folder = False
-                            break
-                    break
-                else:
-                    log.info(f"No coverage for polygon: {polygon_id}")
-                break
-            ## TODO: check breaks and workflow!!!
-
-            # Falls keiner gefunden → letzten nehmen
-            if selected_folder is True:
-                # print(f"selected folder is False")
-                polygon_counter += 1
-                break
-            elif selected_folder is False:
-                #print(f"selected folder is False")
-                #polygon_counter +=1
-                continue
-
-            if len(rgb_file_names) == 0:
-                selected_folder = False
-                print(f"Error: no hist files found for polygon: {polygon.GetField('orig_index'), polygon.GetField('id')}")
-                #polygon_counter +=1
-                break
-            else:
-
-                key, new_safetensor_dict, polygon_meta = process_tiff_file(x_min, y_min, rgb_file_names, final_ir_files, shapely_polygon, target_crs, source_epsg_int, orig_x_min, orig_y_min, year)
-
-
-                metadata_list.append(polygon_meta)
-                # new_safetensor_dict = XXX
-                safetensor_dict.update({key:new_safetensor_dict})
-
-                break
-
-
-        if selected_folder == False:
-            log.info(f"No coverage for polygon: {polygon_id}")
-
-        if polygon_counter % 1000 == 0 and polygon_counter > 0 and len(safetensor_dict) > 0:
-            if parquet_path:
-                print("write to parquet 1")
-                file_name = f"meta_{polygon_counter}-{polygon_counter-1000}.parquet"
-                lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-                metadata_list = []
-            if lmdb_path:
-                print("write to lmdb 1")
-                current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
-                lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-                #process_tiff_folder(final_file_names, current_lmdb)
-                safetensor_dict = {}
-                #final_file_names = []
-
-        polygon_counter +=1
-
-
-    if parquet_path:
-        print("write to parquet 2")
-        if len(metadata_list) > 0:
-            file_name = f"meta_{polygon_counter}-x.parquet"
-            lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-        lmdb_fkt.combine_parquet_files(shapefile_meta_folder, output_meta_file)
-
-    if lmdb_path:
-        print("write to lmdb 2")
-        current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
-        lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
-
-"""
 def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, existing_ids_file=None):
     driver = ogr.GetDriverByName('ESRI Shapefile')
     dataSource = driver.Open(shapefile_path, 0)  # 0 means read-only.
@@ -1163,7 +541,7 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
 
             for target_crs in rgb_crs:  # can't be empty because that was checked earlier
 
-                x_min, x_max, y_min, y_max, geom_clone = copy_dops.transform_to_target_crs(geom, source_epsg_int,
+                x_min, x_max, y_min, y_max, geom_clone = func.transform_to_target_crs(geom, source_epsg_int,
                                                                                            target_crs)
 
                 """if lmdb_keys_prefixes:

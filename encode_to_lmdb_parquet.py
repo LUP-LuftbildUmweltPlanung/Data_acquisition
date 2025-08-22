@@ -39,34 +39,6 @@ def save_bands_to_safetensor(bands_dict):
     return save(bands_dict)
 
 
-"""def write_to_lmdb(db, key, safetensor_data):
-    """
-"""Schreibt ein mehrdimensionales Safetensor-Objekt in eine LMDB-Datenbank.
-
-    Falls die LMDB zu klein ist, wird `map_size` automatisch verdoppelt.
-
-    :param db: LMDB-Umgebung
-    :param key: Schlüssel für den Safetensor (z. B. Name der TIFF-Datei)
-    :param bands_dict: Dictionary mit {Bandname: NumPy-Array}, das gespeichert werden soll
-"""
-"""
-    success = False
-
-    while not success:
-        txn = db.begin(write=True)
-        try:
-            txn.put(key.encode(), safetensor_data)  # Key zu Bytes umwandeln
-            txn.commit()
-            success = True
-            print(f"TIFF '{key}' erfolgreich in LMDB gespeichert!")
-        except lmdb.MapFullError:
-            txn.abort()  # Transaktion abbrechen
-            curr_limit = db.info()['map_size']
-            new_limit = curr_limit * 2
-            print(f"Speicher voll! Verdopple LMDB-Größe auf {new_limit >> 20}MB ...")
-            db.set_mapsize(new_limit)  # Speichergröße erhöhen
-"""
-
 def write_to_lmdb(db, key, safetensor_data, add_size=None):
     """
     Schreibt ein mehrdimensionales Safetensor-Objekt in eine LMDB-Datenbank.
@@ -137,20 +109,6 @@ def create_or_open_lmdb(path_to_lmdb, size=None):
         return lmdb.open(path_to_lmdb, map_size=map_size)
 
 
-"""def get_key_number_lmdb(path_to_lmdb):
-    env = lmdb.open(
-        path_to_lmdb,
-        readonly=True,
-        lock=False,  # Kein Schreib-Lock nötig
-        readahead=False,  # Spart RAM bei großen DBs
-        max_readers=1  # Geringe Belastung
-    )
-
-    with env.begin() as txn:
-        n_keys = txn.stat()['entries']
-
-    print(f"Anzahl der Einträge in der LMDB: {n_keys}")
-    return n_keys"""
 
 def count_lmdb_keys_and_prefixes(path_to_lmdb, n_shapes):
     """Liest alle Keys aus LMDB und extrahiert Prefixes wie 'minX_minY'"""
@@ -398,20 +356,7 @@ def read_all_from_lmdb(path_to_lmdb):
     #print("Gespeicherte Keys & Bänder in LMDB:")
     #print(all_data)
 
-"""def print_bands_in_lmdb(path_to_lmdb):
 
-    all_data = read_all_from_lmdb(path_to_lmdb)
-    #print(all_data)
-
-    print("Gespeicherte Keys & Bänder in LMDB:")
-    for tif_name, bands in all_data.items():
-        print(f"{tif_name}: {list(bands.keys())}")
-
-    #for data, metadata in all_data.items():
-    #    #tif_name, bands = data
-    #    #print(f"{tif_name}: {list(bands.keys())}")
-    #    print(metadata)
-"""
 def print_bands_in_lmdb(path_to_lmdb, specific_key=None):
 
     all_data = read_all_from_lmdb(path_to_lmdb)
@@ -547,8 +492,6 @@ def merge_lmdb_sources(source_dirs, target_dir, map_size=20*1024**2, add_size=10
     target_env.close()
 
     print(f"\nZusammenführung abgeschlossen. Gesamtanzahl Keys: {total_keys}")
-
-
 
 
 

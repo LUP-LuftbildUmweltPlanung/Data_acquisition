@@ -4,9 +4,11 @@ from osgeo import gdal, ogr, osr
 import numpy as np
 import re
 
-def encode_coordinates(x_min, x_max, y_min, y_max):
-    """Adjust for the naming convention and ensure proper rounding
-    EPSG-coordinates -> Naming convention"""
+import download_by_shape_functions as func
+
+"""def encode_coordinates(x_min, x_max, y_min, y_max):
+    #Adjust for the naming convention and ensure proper rounding
+    #EPSG-coordinates -> Naming convention
 
     x_min = np.floor(x_min / 1000)  # Round down for start X
     x_max = np.ceil(x_max / 1000)  # Round up for end X
@@ -23,10 +25,10 @@ def encode_coordinates(x_min, x_max, y_min, y_max):
         y_max += 1
 
     return int(x_min), int(x_max), int(y_min), int(y_max)
+"""
 
-
-def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
-    """ Transform the geom of the given shape file to the target EPSG of the output files"""
+"""def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
+    #Transform the geom of the given shape file to the target EPSG of the output files
     # Define the target spatial reference (EPSG:25833)
     targetSRS = osr.SpatialReference()
     targetSRS.ImportFromEPSG(target_epsg_int)
@@ -47,11 +49,11 @@ def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
     extent = geom_clone.GetEnvelope()
 
     return extent[0], extent[1], extent[2], extent[3], geom_clone
+"""
 
-
-def find_state_folder(input_folder, year, state, epsg_int):
+"""def find_state_folder(input_folder, year, state, epsg_int):
     """
-    Searches for a subfolder inside the given year folder that starts with the state name or abbreviation.
+"""Searches for a subfolder inside the given year folder that starts with the state name or abbreviation.
 
     Args:
         base_folder (str): The base input folder.
@@ -61,6 +63,7 @@ def find_state_folder(input_folder, year, state, epsg_int):
     Returns:
         str or None: The full path to the matching folder if found, otherwise None.
     """
+"""
 
     year_folder = os.path.join(input_folder, str(year))
 
@@ -78,11 +81,11 @@ def find_state_folder(input_folder, year, state, epsg_int):
 
     print(f"Error: No matching folder found for state '{state}' in {year_folder}.")
     return None
+"""
 
-
-def extract_number_from_filename(filename):
+"""def extract_number_from_filename(filename):
     """
-    Extracts the last single number that is between underscores (_) from the filename. e.g. 1 in dop20rgb_32573_5359_1_bw.tif
+"""Extracts the last single number that is between underscores (_) from the filename. e.g. 1 in dop20rgb_32573_5359_1_bw.tif
 
     Args:
         filename (str): The name of the file.
@@ -90,16 +93,16 @@ def extract_number_from_filename(filename):
     Returns:
         int or None: The extracted number if found, otherwise None.
     """
-    #match = re.findall(r'_(\d+)_', filename)  # Find all numbers between underscores
+"""#match = re.findall(r'_(\d+)_', filename)  # Find all numbers between underscores
     match = re.findall(r'_(\d)(?=[._])', filename)  # Find all numbers between underscores
     if match:
         return int(match[-1])  # Return the last found number as integer
     return None
+"""
 
-
-def check_consistent_number(target_folder):
+"""def check_consistent_number(target_folder):
     """
-    Checks if all .tif files in the target folder have the same number in their filename.
+"""Checks if all .tif files in the target folder have the same number in their filename.
 
     Args:
         target_folder (str): The path to the folder containing the copied .tif files.
@@ -107,7 +110,7 @@ def check_consistent_number(target_folder):
     Returns:
         int or None: The consistent number if all are the same, otherwise None.
     """
-    numbers = set()
+"""numbers = set()
     #print(target_folder)
     if not os.path.isdir(target_folder):
         print(f"Error: Output folder {target_folder} does not exist.")
@@ -115,7 +118,7 @@ def check_consistent_number(target_folder):
 
     for file in os.listdir(target_folder):
         if file.endswith(".tif"):
-            number = extract_number_from_filename(file)
+            number = func.extract_number_from_filename(file)
             if number is not None:
                 numbers.add(number)
 
@@ -127,9 +130,8 @@ def check_consistent_number(target_folder):
     else:
         #print(f"Multiple different numbers found in filenames: {numbers} in {target_folder}")
         return numbers
+"""
 
-
-################ from Data_acquisition_repository - Brandenburg_saveraster.py ########################
 def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, epsg_int):
     """creates a list of file names of zip files that will be extracted later
     filenames are defined using x_start and y_start and go to x_start+1 and y_start+1
@@ -154,19 +156,19 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
         exit()
 
     #print(input_folder, year, state, epsg_int)
-    input_folder = find_state_folder(input_folder, year, state, epsg_int)
+    input_folder = func._state_folder(input_folder, year, state, epsg_int)
     #print(input_folder)
     file_names = []
 
     for folder in input_folder:
 
-        patch_lengths = check_consistent_number(folder)
+        patch_lengths = func.check_consistent_number(folder)
         #patch_length = 2
         #print(patch_length)
 
 
 
-        x_min, x_max, y_min, y_max = encode_coordinates(x_start, x_end, y_start, y_end)
+        x_min, x_max, y_min, y_max = func.encode_coordinates(x_start, x_end, y_start, y_end)
 
         #print(x_min, x_max, y_min, y_max)
         for patch_length in patch_lengths:
@@ -174,7 +176,7 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
                 for y in range(y_min, y_max, patch_length):
 
                     # Skip extracting image file if the part does not intersect with the polygon
-                    #filename_x_min, filename_y_min = encode_coordinates(x, x + 1, y, y + 1)
+                    #filename_x_min, filename_y_min = func.encode_coordinates(x, x + 1, y, y + 1)
                     if year <= 2012 or (state == "st" and epsg_int == 4647 and year <= 2014 and "dop20c" in folder):
                         file_name = f"dop20c_{x}_{y}dr.tif"
                         file_names.append(os.path.join(folder, file_name))
@@ -233,8 +235,8 @@ def process_shapefile(polygon_name, state, year, input_folder, target_crs, shape
 
     geom = polygon.GetGeometryRef()
 
-    x_min, x_max, y_min, y_max, geom = transform_to_target_crs(geom, source_epsg_int, target_crs)
-    #x_start, x_end, y_start, y_end = encode_coordinates(target_crs,x_min, x_max, y_min, y_max)
+    x_min, x_max, y_min, y_max, geom = func.transform_to_target_crs(geom, source_epsg_int, target_crs)
+    #x_start, x_end, y_start, y_end = func.encode_coordinates(target_crs,x_min, x_max, y_min, y_max)
 
     print(input_folder, year, state, target_crs)
 
@@ -258,7 +260,7 @@ def process_shapefile(polygon_name, state, year, input_folder, target_crs, shape
 
     print(f"Dateien erfolgreich nach {target_folder} kopiert.")
 
-def get_state_code(state):
+"""def get_state_code(state):
     state_codes = {"Brandenburg":"bb",
                    "Berlin":"be",
                    "Baden Württemberg":"bw",
@@ -281,10 +283,11 @@ def get_state_code(state):
         return state_codes[state]
     else:
         exit()
+"""
 
 def get_state_and_crs(state, year):
 
-    state = get_state_code(state)
+    state = func.get_state_code(state)
 
 
     ################ if-else statements do not cover full folder structure, especially years <2012 may be different ##############
@@ -324,9 +327,10 @@ def get_state_and_crs(state, year):
         print("new crs")
         return None, state #exit()
     return target_crs, state
+
+
+
 # Beispielaufruf
-
-
 """
 state = "Sachsen-Anhalt"
 polygon_name = "Oranienbaumer Heide"

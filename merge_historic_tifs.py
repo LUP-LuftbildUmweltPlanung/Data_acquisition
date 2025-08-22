@@ -3,35 +3,11 @@ from osgeo import gdal, osr, ogr
 import glob
 from shapely.geometry import box
 from shapely.wkt import loads
-#from main import transform_to_target_crs
+import download_by_shape_functions as func
 import rasterio
 from pathlib import Path
 import shutil
 
-
-def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
-    """ Transform the geom of the given shape file to the target EPSG of the output files"""
-    # Define the target spatial reference (EPSG:25833)
-    targetSRS = osr.SpatialReference()
-    targetSRS.ImportFromEPSG(target_epsg_int)
-
-    sourceSRS = osr.SpatialReference()
-    sourceSRS.ImportFromEPSG(source_epsg_int)
-
-    # Check if the source spatial reference system is different from EPSG:25833
-    if not sourceSRS.IsSame(targetSRS):
-        # Create a coordinate transformation to EPSG:25833
-        coordTrans = osr.CoordinateTransformation(sourceSRS, targetSRS)
-
-        # Transform geom and get extent
-        geom.Transform(coordTrans)
-        extent = geom.GetEnvelope()
-
-    else:
-        # If the SRS is already EPSG:25833, return the original extent
-        extent = geom.GetEnvelope()
-
-    return extent[0], extent[1], extent[2], extent[3], geom
 
 
 def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
@@ -225,39 +201,12 @@ def merge_raster_bands(rgb, ir, output_file_path):
 
 
 """
-Extracts the spatial extent (bounding box) of a given TIFF file using GDAL.
-This is crucial for sorting and merging because it allows the script to determine the spatial order of the raster tiles.
-"""
-def get_tile_bounds(file_path):
-    """Extract bounding box from a single TIFF file."""
-    ds = gdal.Open(file_path)
-    gt = ds.GetGeoTransform()
-    min_x = gt[0]
-    max_y = gt[3]
-    max_x = min_x + (ds.RasterXSize * gt[1])
-    min_y = max_y + (ds.RasterYSize * gt[5])
-    ds = None
-    return min_x, min_y, max_x, max_y
-
-"""
-Sorts the list of raster files based on their spatial location (min_x, min_y).
-Ensures that tiles are processed in an order that minimizes spatial discontinuities, leading to better merging performance and reducing artifacts.
-"""
-def sort_files_by_spatial_proximity(input_files):
-    """Sort files based on their spatial proximity."""
-    tile_bounds = [(f, get_tile_bounds(f)) for f in input_files]
-    # Sort by min_x and then by min_y to ensure proximity
-    sorted_files = sorted(tile_bounds, key=lambda x: (x[1][0], x[1][1]))
-    return [f[0] for f in sorted_files]
-
-
-"""
 They improve efficiency when handling large raster datasets by ensuring a structured merging approach.
 Ensures that the final output file has correct spatial alignment, which is critical for accurate visualization in GIS and WMS applications.
 Helps prevent issues like gaps or overlaps between tiles when merging large geospatial datasets.
 """
 
-def merge_files(input_dir, output_file_name, output_wms_path, batch_size, target_crs, file_type=None):
+def merge_files_adapted(input_dir, output_file_name, output_wms_path, batch_size, target_crs, file_type=None):
     """
     Merge all TIFF files in the specified directory into a single output file in batches.
     Args:
@@ -286,7 +235,7 @@ def merge_files(input_dir, output_file_name, output_wms_path, batch_size, target
     print(f"Found {len(input_files)} files to merge for file type: {file_type}")
 
     # Sort files by spatial proximity for better merging
-    input_files = sort_files_by_spatial_proximity(input_files)
+    input_files = func.sort_files_by_spatial_proximity(input_files)
 
     temp_files = []
     compress_options = [
@@ -393,22 +342,12 @@ def reproject_tif(input_tif, output_tif, dst_crs):
 
 
 
-def create_directory(path, name):
-    """Create a directory if it doesn't exist yet"""
-    directory_path = os.path.join(path, name)
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-
-    return directory_path
-
-
-
 
 def main(input_folder, year, polygon_name, output_name, shapefile_path, target_crs, input_raster_crs=25832, merge_channels=True):
     if merge_channels == "rgb":
-        output_folder = create_directory(input_folder, "merge_rgb")
+        output_folder = func.create_directory(input_folder, "merge_rgb")
     else:
-        output_folder = create_directory(input_folder, "merge")
+        output_folder = func.create_directory(input_folder, "merge")
 
     rgb_files = glob.glob(os.path.join(input_folder, "dop20rgb*.tif"))
     if len(rgb_files) == 0:
@@ -465,11 +404,11 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
                 exit()
             geom = polygon.GetGeometryRef()
 
-            _, _, _, _, new_geom = transform_to_target_crs(geom, source_epsg_int=source_epsg_int,
+            _, _, _, _, new_geom = func.transform_to_target_crs(geom, source_epsg_int=source_epsg_int,
                                                            target_epsg_int=file_crs_manual)
 
-            # x_min, y_min, x_max, y_max = get_tile_bounds(reprojected_ir_path)
-            x_min, y_min, x_max, y_max = get_tile_bounds(new_rgb_file)
+            # x_min, y_min, x_max, y_max = func.get_tile_bounds(reprojected_ir_path)
+            x_min, y_min, x_max, y_max = func.get_tile_bounds(new_rgb_file)
 
             intersects = polygon_partition_intersect(new_geom, x_min, y_min, x_max, y_max)
 
@@ -533,10 +472,10 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
             geom = polygon.GetGeometryRef()
 
 
-            _, _, _, _, new_geom = transform_to_target_crs(geom, source_epsg_int=source_epsg_int, target_epsg_int=file_crs_manual)
+            _, _, _, _, new_geom = func.transform_to_target_crs(geom, source_epsg_int=source_epsg_int, target_epsg_int=file_crs_manual)
 
-            #x_min, y_min, x_max, y_max = get_tile_bounds(reprojected_ir_path)
-            x_min, y_min, x_max, y_max = get_tile_bounds(new_ir_file)
+            #x_min, y_min, x_max, y_max = func.get_tile_bounds(reprojected_ir_path)
+            x_min, y_min, x_max, y_max = func.get_tile_bounds(new_ir_file)
 
 
             intersects = polygon_partition_intersect(new_geom, x_min, y_min, x_max, y_max)
@@ -549,7 +488,7 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
                 merge_raster_bands2(new_rgb_file, new_ir_file, output_file)
 
 
-    merge_files(str(output_folder), output_name, input_folder, file_number, target_crs, file_type=year)
+    merge_files_adapted(str(output_folder), output_name, input_folder, file_number, target_crs, file_type=year)
     #reprojected_path = os.path.join(input_folder, f"{output_name}_{year}_merged_25832.tif")
     #reproject_tif(os.path.join(input_folder, f"{output_name}_{year}_merged.tif"), reprojected_path, target_crs)
 

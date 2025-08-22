@@ -4,53 +4,10 @@ from osgeo import gdal, ogr, osr
 import numpy as np
 import re
 
-def encode_coordinates(x_min, x_max, y_min, y_max):
-    """Adjust for the naming convention and ensure proper rounding
-    EPSG-coordinates -> Naming convention"""
-
-    x_min = np.floor(x_min / 1000)  # Round down for start X
-    x_max = np.ceil(x_max / 1000)  # Round up for end X
-    y_min = np.floor(y_min / 1000)  # Round down for start Y
-    y_max = np.ceil(y_max / 1000)  # Round up for end Y
-
-    if x_min % 2 != 0:
-        x_min -= 1
-    if x_max % 2 != 0:
-        x_max += 1
-    if y_min % 2 != 0:
-        y_min -= 1
-    if y_max % 2 != 0:
-        y_max += 1
-
-    return int(x_min), int(x_max), int(y_min), int(y_max)
+import download_by_shape_functions as func
 
 
-def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
-    """ Transform the geom of the given shape file to the target EPSG of the output files"""
-    # Define the target spatial reference (EPSG:25833)
-    targetSRS = osr.SpatialReference()
-    targetSRS.ImportFromEPSG(target_epsg_int)
-
-    sourceSRS = osr.SpatialReference()
-    sourceSRS.ImportFromEPSG(source_epsg_int)
-
-    # Check if the source spatial reference system is different from EPSG:25833
-    if not sourceSRS.IsSame(targetSRS):
-        # Create a coordinate transformation to EPSG:25833
-        coordTrans = osr.CoordinateTransformation(sourceSRS, targetSRS)
-
-        # Transform geom and get extent
-        geom.Transform(coordTrans)
-        extent = geom.GetEnvelope()
-
-    else:
-        # If the SRS is already EPSG:25833, return the original extent
-        extent = geom.GetEnvelope()
-
-    return extent[0], extent[1], extent[2], extent[3], geom
-
-
-def find_state_folder(input_folder, year, state, epsg_int):
+def find_single_state_folder(input_folder, year, state, epsg_int):
     """
     Searches for a subfolder inside the given year folder that starts with the state name or abbreviation.
 
@@ -79,24 +36,7 @@ def find_state_folder(input_folder, year, state, epsg_int):
     return None
 
 
-def extract_number_from_filename(filename):
-    """
-    Extracts the last number that is between underscores (_) from the filename.
-
-    Args:
-        filename (str): The name of the file.
-
-    Returns:
-        int or None: The extracted number if found, otherwise None.
-    """
-    #match = re.findall(r'_(\d+)_', filename)  # Find all numbers between underscores
-    match = re.findall(r'_(\d)(?=[._])', filename)  # Find all numbers between underscores
-    if match:
-        return int(match[-1])  # Return the last found number as integer
-    return None
-
-
-def check_consistent_number(target_folder):
+def check_single_consistent_number(target_folder):
     """
     Checks if all .tif files in the target folder have the same number in their filename.
 
@@ -114,7 +54,7 @@ def check_consistent_number(target_folder):
 
     for file in os.listdir(target_folder):
         if file.endswith(".tif"):
-            number = extract_number_from_filename(file)
+            number = func.extract_number_from_filename(file)
             if number is not None:
                 numbers.add(number)
 
@@ -128,7 +68,6 @@ def check_consistent_number(target_folder):
         return None
 
 
-################ from Data_acquisition_repository - Brandenburg_saveraster.py ########################
 def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, epsg_int):
     """creates a list of file names of zip files that will be extracted later
     filenames are defined using x_start and y_start and go to x_start+1 and y_start+1
@@ -145,15 +84,15 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
         exit()
 
     #print(input_folder, year, state, epsg_int)
-    input_folder = find_state_folder(input_folder, year, state, epsg_int)
+    input_folder = find_single_state_folder(input_folder, year, state, epsg_int)
     #print(input_folder)
-    patch_length = check_consistent_number(input_folder)
+    patch_length = check_single_consistent_number(input_folder)
     #patch_length = 2
     #print(patch_length)
 
     file_names = []
 
-    x_min, x_max, y_min, y_max = encode_coordinates(x_start, x_end, y_start, y_end)
+    x_min, x_max, y_min, y_max = func.encode_coordinates(x_start, x_end, y_start, y_end)
 
     #print(x_min, x_max, y_min, y_max)
     for x in range(x_min, x_max, patch_length):
@@ -214,7 +153,7 @@ def process_shapefile(polygon_name, state, year, input_folder, target_crs, shape
 
     geom = polygon.GetGeometryRef()
 
-    x_min, x_max, y_min, y_max, geom = transform_to_target_crs(geom, source_epsg_int, target_crs)
+    x_min, x_max, y_min, y_max, geom = func.transform_to_target_crs(geom, source_epsg_int, target_crs)
     #x_start, x_end, y_start, y_end = encode_coordinates(target_crs,x_min, x_max, y_min, y_max)
 
     print(input_folder, year, state, target_crs)

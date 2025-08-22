@@ -6,7 +6,7 @@ import lmdb
 #from create_key_parquet_copy import all_ids_file, existing_keys_lmdb, output_parquet_path
 
 
-def count_lmdb_keys_and_prefixes(path_to_lmdb):
+def count_lmdb_keys_and_prefixes_3(path_to_lmdb):
     env = lmdb.open(path_to_lmdb, readonly=True)
     prefixes = set()
     counter = 0
@@ -48,12 +48,12 @@ def count_lmdb_keys_and_prefixes(path_to_lmdb, n_shapes):
         return None, None
 """
 
-def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parquet_path):
+def write_existing_ids_from_lmdb_3(all_ids_file, existing_keys_lmdb, output_parquet_path):
     all_ids = pd.read_parquet(all_ids_file)
 
     print(all_ids)
 
-    prefixes = count_lmdb_keys_and_prefixes(existing_keys_lmdb)
+    prefixes = count_lmdb_keys_and_prefixes_3(existing_keys_lmdb)
     if len(all_ids) == len(prefixes):
         print("all keys exist")
         return
@@ -72,7 +72,7 @@ start = time.time()
 all_ids_file = "/home/embedding/Data_Center/Vera/full_train_all_keys.parquet"
 existing_keys_lmdb = "/home/embedding/Data_Center/Vera/full_train.lmdb"
 output_parquet_path = "/home/embedding/Data_Center/Vera/train_existing_keys.parquet"
-write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parquet_path)
+write_existing_ids_from_lmdb3(all_ids_file, existing_keys_lmdb, output_parquet_path)
 #print(result)
 
 print(time.time() - start)
