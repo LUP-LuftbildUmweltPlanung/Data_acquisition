@@ -67,6 +67,8 @@ def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
 """
 
 def write_existing_ids_from_parquet(all_ids_file, existing_keys_parquet, output_parquet_path):
+    """Write prefixes of lmdb_keys that have already been processed from a parquet file to a parquet file."""
+
     df = pd.read_parquet(existing_keys_parquet)[["crs"]]  # nur 'crs'
     df = df.reset_index()
     parquet_keys = df["lmdb_key"].astype(str)
@@ -93,6 +95,7 @@ def write_existing_ids_from_parquet(all_ids_file, existing_keys_parquet, output_
     print(f"{len(prefixes)} Zeilen geschrieben nach {output_parquet_path}")
 
 def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parquet_path):
+    """Write prefixes of lmdb_keys that have already been processed from an lmdb file to a parquet file."""
     all_ids = pd.read_parquet(all_ids_file)
 
     print(all_ids)
@@ -110,6 +113,8 @@ def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parque
     print(f"{len(filtered_df)} Zeilen geschrieben nach {output_parquet_path}")
 
 def write_existing_ids_from_lmdb_2(all_ids_file, existing_keys_lmdb, output_parquet_path):
+    """Write full lmdb keys that have already been processed from an lmdb file to a parquet file."""
+
     #all_ids = pd.read_parquet(all_ids_file)
 
     #print(all_ids)
@@ -130,12 +135,16 @@ def write_existing_ids_from_lmdb_2(all_ids_file, existing_keys_lmdb, output_parq
 
 
 def lmdb_keys_to_prefixes(set_lmdb_keys):
+    """Create prefix from a set of lmdb keys"""
+
     prefixes = set()
     prefixes.update(f"{key.split('_')[0]}_{key.split('_')[1]}" for key in set_lmdb_keys)
 
     return prefixes
 
 def get_ids_from_lmdb_keys(all_ids_file, existing_keys_lmdb, output_parquet_path):
+    """Extract the prefixes of lmdb keys from the already processed keys and save them to a parquet file."""
+
     all_ids = pd.read_parquet(all_ids_file)
 
     print(all_ids)
@@ -186,8 +195,6 @@ def write_all_ids_to_parquet(shapefile_path, parquet_path):
     records = []
 
     for feature in inLayer:
-        #if polygon > 5:
-        #    break
         feature_id = feature.GetField("id")
         #print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
         geom = feature.GetGeometryRef()
@@ -214,9 +221,6 @@ def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
     df = df.dropna()
     parquet_df["lmdb_key"] = df["lmdb_key"].astype(str)
     parquet_df["lmdb_prefix"] = parquet_df["lmdb_key"].apply(lambda x: f"{x.split('_')[0]}_{x.split('_')[1]}")
-    #print(parquet_df)
-
-    #return
 
     inDriver = ogr.GetDriverByName("ESRI Shapefile")
     inDataSource = inDriver.Open(shapefile_path, 1)
@@ -228,8 +232,6 @@ def full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet):
     records = []
 
     for feature in inLayer:
-        #if polygon > 5:
-        #    break
         feature_id = feature.GetField("id")
         #print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
         geom = feature.GetGeometryRef()

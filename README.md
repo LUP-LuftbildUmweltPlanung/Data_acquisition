@@ -1,4 +1,4 @@
-# BfN Naturerbe - Data Acquisition
+# Data Acquisition
 
 Automated download of raster data and acquisition dates from wms servers or geoportals.
 
@@ -24,11 +24,15 @@ The different scripts correspond to different data distribution platforms or out
   * cd ../your_name/environment
 * pip install -r requirements.txt
 
-### Executing program
+## WMS download
 
 * Create a directory and place the shape files you want to use for the data acquisition in it.
 * Open the program file you want to work with.
-* To run multiple WMS requests, define each configuration in a YAML file like this:
+* To run multiple WMS requests, define each configuration in a YAML file like the example below.
+* If you want to save the output in TIFF files, remove the lmdb part or fill it with null or empty strings ""
+* If you want to save the output in lmdb format, fill in the paths to the respective folders and files in the lmdb section.
+* * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
+
 <pre> - index: 0  # Explanation row - update index for each new config
 
   ######### General #########
@@ -55,8 +59,15 @@ The different scripts correspond to different data distribution platforms or out
   ######### Merging #########
   merge: false   # set to true if tiles should be merged to one big file for each shape file, false otherwise. Attention: Big files if polygons are big or far apart
   AOI: null   # specify area of interest in name of merged meta and image files
-  year: null   # specify a year in name of merged meta and image files </pre>
+  year: null   # specify a year in name of merged meta and image files
   
+  ######### LMDB: #########
+  lmdb_path: "PATH" # directory in which lmdb for image bands will be created
+  parquet_path: "PATH" # directory in which parquet with metadata will be created
+  all_ids_file: "PATH" # parquet file with all lmdb_keys and matching shape-ids of a dataset
+  exisiting_ids_file: "PATH" # parquet file with lmdb_keys and matching shape-ids that have already been processed
+ </pre>
+
   * Alternative option:
     * Instead of a YAML file, you can manually configure global parameters in the main() function of wms_saveraster.py, and call the function at the bottom of the script.
   ```
@@ -72,6 +83,16 @@ The different scripts correspond to different data distribution platforms or out
 * Write acquisition dates to shape file or extract data from Brandenburg's geoportal:
   * Specify the parameters at the start of the program workflow in "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
   * Run "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
+
+
+## Extraction of TIFF from hard drive
+1. Extract data for one specific area and year from a hard drive with historic aerial images of Germany with copy_hist_dops.py. You can modify the example at the bottom of the file to your specific needs. (hist_process_specific_acquisition_year.py basically does the same, it just doesn't search multiple input folders but just one)
+2. Process the files in the target folder with merge_historic_tifs.py (Example call at the bottom of the script). Includes merging and reprojecting to a single file of the target coordinate system.
+
+## Extraction of LMDB from hard drive
+* If you want to save the output in lmdb format, follow the example at the bottom of tif_to_lmdb.py
+* * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
+
 
 ## Help / Known Issues
 

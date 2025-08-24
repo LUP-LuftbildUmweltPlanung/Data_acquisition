@@ -18,7 +18,6 @@ import gc
 import encode_to_lmdb_parquet as lmdb_fkt
 import psutil
 
-#import create_key_parquet as key_parquet
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
@@ -151,7 +150,6 @@ def merge_raster_bands(rgb, ir, output_file_path):
     os.remove(ir_path)
 
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=None):
-
     """Get image data for a specified frame and write it into tif file"""
 
     # Adjust x_max and y_max if fixed size is defined
@@ -183,20 +181,19 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
             break  # Wenn erfolgreich, verlasse die Schleife
         except Exception as e:
             sub_log.warning(
-                f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {layer} – Warte {delay // 60} Minuten. Fehler: {e}")
+                f"Attempt {attempt + 1}: Error extracting the map for layer {layer} – Waiting {delay // 60} minutes. Error: {e}")
             time.sleep(delay)
 
     if not success:
         sub_log.error(
-            "Layer 1: Can't get map for layer %s in %s from: %s. Nach mehreren Versuchen abgebrochen." % (layer,
+            "Layer 1: Can't get map for layer %s in %s from: %s. Exiting after multiple attempts." % (layer,
                                                                                                           img_format,
                                                                                                           wms_ad))
-        raise RuntimeError("WMS GetMap fehlgeschlagen nach mehreren Versuchen.")
+        raise RuntimeError("WMS GetMap failed after multiple attempts.")
 
 
     if "img" in locals() and parquet_path:
         sub_log.debug("img in locals")
-        #extract_meta = lmdb_fkt.get_metadata(img)
         try:
             extract_meta.update(lmdb_fkt.get_meta_from_img(img))
         except Exception as e:
@@ -216,24 +213,23 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
                     layers=[layer2],
                     srs=epsg_code,
                     bbox=(x_min, y_min, x_max, y_max),
-                    # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
                     size=size,
                     format=img_format)
                 success = True
-                break  # Wenn erfolgreich, verlasse die Schleife
+                break  # Break if successfull
             except Exception as e:
                 sub_log.warning(
-                    f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {layer} – Warte {delay // 60} Minuten. Fehler: {e}")
+                    f"Attempt {attempt + 1}: Error extracting the map for layer {layer} – Waiting {delay // 60} minutes. Error: {e}")
                 time.sleep(delay)
         if not success:
             sub_log.error("Layer 2: Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
-            raise RuntimeError("WMS GetMap fehlgeschlagen nach mehreren Versuchen.")
+            raise RuntimeError("WMS GetMap failed after multiple attempts.")
 
         if "count" in extract_meta:
-            sub_log.debug("meta count exists")  # ToDo: verify name !!!
+            sub_log.debug("meta count exists")
             extract_meta["count"] +=1
         else:
-            sub_log.debug("no meta count") #ToDo: verify name !!!
+            sub_log.debug("no meta count")
 
         if img2 is not None:
             sub_log.debug("before merge_raster_bands")
@@ -241,7 +237,6 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
                 if lmdb_path:
                     sub_log.debug("lmdb_path")
                     extract_meta["lmdb_key"], new_safetensor_dict = lmdb_fkt.merge_raster_to_safetensor(img, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
-                    #extract_meta["lmdb_key"] = lmdb_fkt.merge_raster_to_lmdb(img, lmdb_path, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
                 else:
                     sub_log.debug("else")
                     merge_raster_bands(img, img2, output_file_path)
@@ -312,6 +307,7 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
 
 
 def get_nodata_from_raster(raster_path):
+    """Get nodata values from a raster image"""
     ds = gdal.Open(raster_path)
     if ds is not None and ds.GetRasterBand(1) is not None:
         nodata = ds.GetRasterBand(1).GetNoDataValue()
@@ -569,8 +565,6 @@ def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, e
             new_metadata, new_safetensor_dict = extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
                                         y_min, x_max, y_max, "wms", acquisition_date=acquisition_date["acquisition"])
 
-            #print(f"new_metadata: {new_metadata}")
-            #print(f"acquisition date: {acquisition_date}")
             new_metadata.update(acquisition_date)
             print(f"updated new_metadata: {new_metadata}")
         except:
@@ -727,24 +721,10 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             sub_log.debug(shapefile_meta_folder)
             output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
 
-        #lmdb_keys_prefixes = False
         keys_to_process = pd.DataFrame(columns=["id", "prefix"])
         if lmdb_path:
-            #print(1)
             current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
-            """#print(current_lmdb)
-            if os.path.exists(current_lmdb):
-                #print(2)
-                n_shapes = inLayer.GetFeatureCount()
-                #print(n_shapes)
-                n_keys_lmdb, lmdb_keys_prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes(current_lmdb, n_shapes)
-                #print(n_keys_lmdb)
-
-                if n_keys_lmdb is None:
-                    print(f"LMDB scheint vollständig zu sein. Skippe Verarbeitung von {shapefile_name}")
-                    return"""
             keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
-            #print(f"Keys to process: {keys_to_process}")
 
         metadata_list = []
         safetensor_dict = {}
@@ -771,7 +751,6 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
         keys_to_process_set = set(keys_to_process["id"].values)
         for feature in inLayer:
             feature_id = feature.GetField("id")
-            #print(type(feature_id))
             if feature_id not in keys_to_process_set:
                 print("skipping ", feature_id)
                 polygon += 1
@@ -785,14 +764,6 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             extent = geom.GetEnvelope()
 
             feature_prefix = f"{int(extent[0])}_{int(extent[2])}"
-            """if lmdb_keys_prefixes != False:
-                minX, _, minY, _ = extent
-                "
-                if feature_prefix in lmdb_keys_prefixes:
-                    print(f"{feature_prefix}_X exists and is skipped.")
-                    polygon +=1
-                    polygon_progress.update(1)
-                    continue"""
 
             if state == "BB_history":
                 years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
@@ -811,13 +782,11 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             gc.collect()
 
             if polygon % 1000 == 0 and polygon > 0 and parquet_path:
-                #if get_memory_usage_percent() >= 50 and polygon > 0:
                 if parquet_path:
                     print("write to parquet 1")
                     sub_log.info("write to parquet 1")
                     file_name = f"meta_{polygon}-{polygon-1000}.parquet"
                     lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
-                    #metadata_list = []
                 if lmdb_path:
                     print("write to lmdb 1")
                     sub_log.info("write to lmdb 1")
@@ -825,18 +794,12 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
                     lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
                     lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
                     id_key_df = id_key_df[0:0]
-                    #safetensor_dict = {}
                 del metadata_list
                 del safetensor_dict
-                #del polygon_meta
-                #del new_safetensor_dict
-                #del id_key_df
                 gc.collect()
 
                 metadata_list = []
                 safetensor_dict = {}
-                #pd.DataFrame(columns=["id", "prefix"])
-                #gc.collect()
             polygon += 1
             polygon_progress.update(1)
 
@@ -844,7 +807,6 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             print("write to parquet 2")
             sub_log.info("write to parquet 2")
             file_name = f"meta_x-{polygon}.parquet"
-            #print(shapefile_meta_folder)
             lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
             lmdb_fkt.combine_parquet_files(shapefile_meta_folder, output_meta_file)
 
@@ -853,11 +815,8 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
             sub_log.info("write to lmdb 2")
             lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
             lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
-            #id_key_df = id_key_df[0:0]
         del metadata_list
         del safetensor_dict
-        #del polygon_meta
-        #del new_safetensor_dict
         del id_key_df
         gc.collect()
 
@@ -882,9 +841,9 @@ def main(input):
     global meta_info_format
     global file_path
     global sub_log
-    global img_width  # new
-    global img_height  # new
-    global merge  # new
+    global img_width
+    global img_height
+    global merge
 
     global lmdb_path
     global parquet_path
@@ -939,9 +898,6 @@ def main(input):
 
     if lmdb_path:
         output_wms_path = ""
-        #if os.path.exists(lmdb_path):
-        #    print(f"LMDB path already exists. Skipping WMS tile download...")
-        #else:
         print(f"Proceeding with WMS tile download and processing...")
         # process bar for number of files:
         count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))

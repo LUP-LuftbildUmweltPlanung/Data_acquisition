@@ -5,9 +5,8 @@ from tqdm import tqdm
 
 
 def check_years(parquet_path):
-    # === Parquet laden ===
-    #df = pd.read_parquet(parquet_path, columns=["lmdb_key","crs"])
-    df = pd.read_parquet(parquet_path)[["acquisition"]]  # nur 'crs'
+    # === Load parquet ===
+    df = pd.read_parquet(parquet_path)[["acquisition"]]
     #print(df.info())
     #print(df.head())
     #return

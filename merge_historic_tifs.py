@@ -26,10 +26,10 @@ def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
 
     return intersection_exists
 
-
+"""
 def merge_raster_bands2(rgb, ir, output_file_path):
-    """Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
-    The output is written into a tif-file."""
+    #Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
+    The output is written into a tif-file.
 
     rgb_path = rgb
     ir_path = ir
@@ -66,11 +66,11 @@ def merge_raster_bands2(rgb, ir, output_file_path):
         print("Failed to create the output file %s." % output_file_path)
         return
 
-    # Set geo-transform and projection from the RGB image
-    output_ds.SetGeoTransform(ir_ds.GetGeoTransform())
-    output_ds.SetProjection(ir_ds.GetProjection())
-    #output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
-    #output_ds.SetProjection(rgb_ds.GetProjection())
+    # Set geo-transform and projection from the RGB or nir image, respectively
+    #output_ds.SetGeoTransform(ir_ds.GetGeoTransform())
+    #output_ds.SetProjection(ir_ds.GetProjection())
+    output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
+    output_ds.SetProjection(rgb_ds.GetProjection())
 
     # Copy RGB bands from the RGB image to the output
     for i in range(1, 4):
@@ -85,13 +85,11 @@ def merge_raster_bands2(rgb, ir, output_file_path):
     output_ds = None
     rgb_ds = None
     ir_ds = None
-
-    #os.remove(rgb_path)
-    #os.remove(ir_path)
+"""
 
 
-def merge_raster_bands3(rgb, output_file_path):
-    """Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
+def reduce_raster_bands_to_rgb(rgb, output_file_path):
+    """Gets an rgbi or rgb image as input and writes the first 3 bands into a new tif file to create an rgb image.
     The output is written into a tif-file."""
 
     rgb_path = rgb
@@ -114,8 +112,6 @@ def merge_raster_bands3(rgb, output_file_path):
     # Set geo-transform and projection from the RGB image
     output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
     output_ds.SetProjection(rgb_ds.GetProjection())
-    #output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
-    #output_ds.SetProjection(rgb_ds.GetProjection())
 
     # Copy RGB bands from the RGB image to the output
     for i in range(1, 4):
@@ -129,9 +125,6 @@ def merge_raster_bands3(rgb, output_file_path):
 
     output_ds = None
     rgb_ds = None
-
-    #os.remove(rgb_path)
-    #os.remove(ir_path)
 
 
 def merge_raster_bands(rgb, ir, output_file_path):
@@ -173,7 +166,7 @@ def merge_raster_bands(rgb, ir, output_file_path):
         print("Failed to create the output file %s." % output_file_path)
         return
 
-    # Set geo-transform and projection from the RGB image
+    # Set geo-transform and projection from the RGB or nir image, respectively
     #output_ds.SetGeoTransform(ir_ds.GetGeoTransform())
     #output_ds.SetProjection(ir_ds.GetProjection())
     output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
@@ -320,10 +313,10 @@ def merge_files_adapted(input_dir, output_file_name, output_wms_path, batch_size
 
 
 def reproject_tif(input_tif, output_tif, dst_crs):
-    """# Eingabe- und Ausgabe-Dateipfade
-    input_tif = "pfad_zur_eingabe_datei.tif"
-    output_tif = "pfad_zur_ausgabe_datei_epsg25832.tif"
-    dst_crs = "EPSG:25832"  # Ziel-Koordinatensystem
+    """ Reproject input tiff to destination coordinate system
+    input_tif = "PATH_TO_INPUT.tif"
+    output_tif = "PATH_TO_OUTPUT_dst_crs.tif" # write destination crs in file name
+    dst_crs = "EPSG:25832"  # destination coordinate system
     """
     src_ds = gdal.Open(input_tif)
     dst_crs = "EPSG:"+str(dst_crs)
@@ -331,19 +324,25 @@ def reproject_tif(input_tif, output_tif, dst_crs):
     options = gdal.WarpOptions(
         dstSRS=dst_crs,
         options=[
-            "COMPRESS=DEFLATE",  # Original beibehalten
-            "TILED=YES",         # Für bessere Raster-Performance
-            "BIGTIFF=YES",       # Falls Datei >4GB
+            "COMPRESS=DEFLATE",
+            "TILED=YES",
+            "BIGTIFF=YES",
         ]
     )
 
-    # Reprojektion durchführen
+    # Reproject
     gdal.Warp(output_tif, src_ds, dstSRS=dst_crs)
 
 
 
 
 def main(input_folder, year, polygon_name, output_name, shapefile_path, target_crs, input_raster_crs=25832, merge_channels=True):
+    """ 1. copies all files in the input folder that intersect with the area of polygon_name to an output folder
+        2. merges channels to rgb and rgbi images
+        3. merges all files in the output folder into one and reprojects them to the target coordinate system (in case the area covers multiple tiles)
+    """
+
+    # depending on rgb or rgbi output
     if merge_channels == "rgb":
         output_folder = func.create_directory(input_folder, "merge_rgb")
     else:
@@ -485,24 +484,28 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
                 #reproject_tif(rgb_file, reprojected_rgb_path, target_crs)
                 print("intersects")
                 merge_raster_bands(new_rgb_file, new_ir_file, output_file)
-                merge_raster_bands2(new_rgb_file, new_ir_file, output_file)
+                #merge_raster_bands2(new_rgb_file, new_ir_file, output_file)
+                reduce_raster_bands_to_rgb(new_rgb_file, output_file)
 
-
-    merge_files_adapted(str(output_folder), output_name, input_folder, file_number, target_crs, file_type=year)
+    # merge and reproject files in output folder:
+    merge_files_adapted(str(output_folder), output_name, input_folder, file_number, target_crs, file_type=year) # includes reprojection
     #reprojected_path = os.path.join(input_folder, f"{output_name}_{year}_merged_25832.tif")
     #reproject_tif(os.path.join(input_folder, f"{output_name}_{year}_merged.tif"), reprojected_path, target_crs)
 
 
-shapefile_path = r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\vorschlagsliste_38_gebiete.shp"
+"""
+# Example:
+shapefile_path = r"PATH_TO_SHAPE"
 target_crs = 25832
 
 
-merge_raster_bands3(r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021.tif", r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021_rgb.tif")
-exit()
-"""
 input_folder = r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\scripted\files\EPSG_5650_Rüthnicker Heide_2016"
 polygon_name = "Rüthnicker Heide"
 output_name = "Rüthnicker_Heide"
 year = 2016
 main(input_folder, year, polygon_name, output_name, shapefile_path, target_crs)
+
+
+# image in rgbi format and correct coordinate systme:
+merge_raster_bands3(r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021.tif", r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021_rgb.tif")
 """

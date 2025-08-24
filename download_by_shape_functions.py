@@ -123,6 +123,7 @@ def get_acquisition_date(input_dict):
 
 
 def config_logger(level, filename):
+    """Configuration of a logger"""
 
     if (level == "critical"):
         log_level = logging.CRITICAL
@@ -141,13 +142,11 @@ def config_logger(level, filename):
     conf_logger = logging.getLogger(filename)
     conf_logger.setLevel(log_level)
 
-    # Datei-Handler und Format für das Hauptskript
     conf_handler = logging.FileHandler(filename, mode='w')
     conf_handler.setLevel(log_level)
     conf_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     conf_handler.setFormatter(conf_formatter)
 
-    # Handler dem Logger hinzufügen
     conf_logger.addHandler(conf_handler)
 
     return conf_logger
@@ -178,6 +177,7 @@ def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
 
 
 def get_state_code(state):
+    """Returns a 2-digit code for the given German state name."""
     state_codes = {"Brandenburg":"bb",
                    "Berlin":"be",
                    "Baden Württemberg":"bw",
@@ -242,7 +242,6 @@ def check_consistent_number(target_folder):
         int or None: The consistent number if all are the same, otherwise None.
     """
     numbers = set()
-    #print(target_folder)
     if not os.path.isdir(target_folder):
         print(f"Error: Output folder {target_folder} does not exist.")
         return None
@@ -254,12 +253,10 @@ def check_consistent_number(target_folder):
                 numbers.add(number)
 
     if len(numbers) == 0:
-        #print(f"Error: No valid numbers found in filenames in {target_folder}. Using default of 2")
         return set([2])
     elif len(numbers) == 1:
         return set([numbers.pop()])  # Return the unique number
     else:
-        #print(f"Multiple different numbers found in filenames: {numbers} in {target_folder}")
         return numbers
 
 def encode_coordinates(x_min, x_max, y_min, y_max):
@@ -298,12 +295,12 @@ def extract_number_from_filename(filename):
         return int(match[-1])  # Return the last found number as integer
     return None
 
-"""
-Extracts the spatial extent (bounding box) of a given TIFF file using GDAL.
-This is crucial for sorting and merging because it allows the script to determine the spatial order of the raster tiles.
-"""
+
 def get_tile_bounds(file_path):
-    """Extract bounding box from a single TIFF file."""
+    """Extracts the spatial extent (bounding box) of a given TIFF file using GDAL.
+    This is crucial for sorting and merging because it allows the script to determine the spatial order of the raster tiles.
+    """
+
     ds = gdal.Open(file_path)
     gt = ds.GetGeoTransform()
     min_x = gt[0]
@@ -314,12 +311,11 @@ def get_tile_bounds(file_path):
     return min_x, min_y, max_x, max_y
 
 
-"""
-Sorts the list of raster files based on their spatial location (min_x, min_y).
-Ensures that tiles are processed in an order that minimizes spatial discontinuities, leading to better merging performance and reducing artifacts.
-"""
 def sort_files_by_spatial_proximity(input_files):
-    """Sort files based on their spatial proximity."""
+    """Sorts the list of raster files based on their spatial location (min_x, min_y).
+    Ensures that tiles are processed in an order that minimizes spatial discontinuities, leading to better merging performance and reducing artifacts.
+    """
+
     tile_bounds = [(f, get_tile_bounds(f)) for f in input_files]
     # Sort by min_x and then by min_y to ensure proximity
     sorted_files = sorted(tile_bounds, key=lambda x: (x[1][0], x[1][1]))
