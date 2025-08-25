@@ -1,8 +1,10 @@
 import os
 import shutil
-from osgeo import gdal, ogr, osr
-import numpy as np
-import re
+#from osgeo import gdal, ogr, osr
+from osgeo import ogr
+#import numpy as np
+#import re
+from pathlib import Path
 
 import download_by_shape_functions as func
 
@@ -11,9 +13,9 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
     filenames are defined using x_start and y_start and go to x_start+1 and y_start+1
     so x_end and y_end should not be in a file name because they go from x_end to x_end+1 which is outside the extent of the shape file"""
 
-    if input_folder.name == "RGB":
+    if Path(input_folder).name == "RGB":
         format_key = "rgb"
-    elif input_folder.name == "IR":
+    elif Path(input_folder).name == "IR":
         format_key = "ir"
     else:
         print("unknown format")
