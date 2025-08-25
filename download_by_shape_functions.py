@@ -12,6 +12,8 @@ import logging
 import logging.config
 import re
 import time
+from osgeo import osr, gdal
+import numpy as np
 
 def create_directory(path, name):
     """Create a directory if it doesn't exist yet"""
