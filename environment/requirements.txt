@@ -12,3 +12,4 @@ torch
 pyarrow
 safetensors
 lmdb
+matplotlib

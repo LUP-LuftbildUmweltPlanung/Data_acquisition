@@ -16,7 +16,7 @@ from pathlib import Path
 import gc
 
 import encode_to_lmdb_parquet as lmdb_fkt
-import psutil
+
 
 
 

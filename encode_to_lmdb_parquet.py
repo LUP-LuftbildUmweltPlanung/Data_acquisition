@@ -567,18 +567,10 @@ def update_existing_ids(new_processed_ids, existing_keys_file):
     updated_processed_ids.to_parquet(existing_keys_file, index=False)
 
 
-"""
-# Example:
-path_to_lmdb = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_tiles2.lmdb"
-read_all_from_lmdb(path_to_lmdb)
-print_bands_in_lmdb(path_to_lmdb)
-path_to_parquet = "/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/parquet/test_tiles2_meta_merged.parquet"
-read_all_from_parquet(path_to_parquet)
-lmdb_meta_to_tif("/home/embedding/Data_Center/Vera/Data_acquisition/test_script2/test_x4.tif", "457843_5843901_20230523", path_to_lmdb, path_to_parquet)
-"""
-#### test: ####
-#303098_5534815_20230527
-#735324_5299611_20220713
-#919031_5681450_20220603
-#533088_5305444_20220611
-#531592_5764227_20220322
+
+######### Example to visualize a specific key: ##########
+# path_to_lmdb = r"PATH" # path to directory that holds lmdb data file
+# print_bands_in_lmdb(path_to_lmdb) # prints content of lmdb file, including the lmdb keys
+# path_to_parquet = r"PATH" # path to .parquet file that holds metadata for lmdb file
+# extracted_lmdb_key = "KEY" # lmdb key you want to visualize the data from (you can see all keys with print_bands_in_lmdb()
+# lmdb_meta_to_tif(r"output.tif", extracted_lmdb_key, path_to_lmdb, path_to_parquet)

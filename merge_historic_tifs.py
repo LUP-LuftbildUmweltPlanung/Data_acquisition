@@ -26,67 +26,6 @@ def polygon_partition_intersect(geom, x_min,y_min,x_max,y_max):
 
     return intersection_exists
 
-"""
-def merge_raster_bands2(rgb, ir, output_file_path):
-    #Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
-    The output is written into a tif-file.
-
-    rgb_path = rgb
-    ir_path = ir
-
-    #with open(rgb_path, 'wb') as f:
-    #    f.write(rgb.read())
-    #with open(ir_path, 'wb') as f:
-    #    f.write(ir.read())
-
-
-    # Open the RGB image
-    try:
-        rgb_ds = gdal.Open(rgb_path, gdal.GA_ReadOnly)
-    except:
-        print("Failed to open the RGB image file of %s." % output_file_path)
-        return
-
-    # Open the IR or CIR image
-    try:
-        ir_ds = gdal.Open(ir_path, gdal.GA_ReadOnly)
-    except:
-        print("Failed to open the IR/CIR image file of %s." % output_file_path)
-        return
-
-    # Check the number of bands in the RGB image (expecting 3 bands)
-    if rgb_ds.RasterCount < 3:
-        print("The RGB image has less than 3 bands %s." % output_file_path)
-        return
-
-    # Create the output dataset with 4 bands (RGB + 1 IR band)
-    driver = gdal.GetDriverByName('GTiff')
-    output_ds = driver.Create(output_file_path, rgb_ds.RasterXSize, rgb_ds.RasterYSize, 3, gdal.GDT_Byte)
-    if output_ds is None:
-        print("Failed to create the output file %s." % output_file_path)
-        return
-
-    # Set geo-transform and projection from the RGB or nir image, respectively
-    #output_ds.SetGeoTransform(ir_ds.GetGeoTransform())
-    #output_ds.SetProjection(ir_ds.GetProjection())
-    output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
-    output_ds.SetProjection(rgb_ds.GetProjection())
-
-    # Copy RGB bands from the RGB image to the output
-    for i in range(1, 4):
-        band_data = rgb_ds.GetRasterBand(i).ReadAsArray()
-        output_ds.GetRasterBand(i).WriteArray(band_data)
-
-    # Close datasets to flush to disk
-    # Remove the temporary files
-
-    print(f"Output dataset size: {output_ds.RasterXSize} x {output_ds.RasterYSize} x {output_ds.RasterCount}")
-
-    output_ds = None
-    rgb_ds = None
-    ir_ds = None
-"""
-
 
 def reduce_raster_bands_to_rgb(rgb, output_file_path):
     """Gets an rgbi or rgb image as input and writes the first 3 bands into a new tif file to create an rgb image.
@@ -133,11 +72,6 @@ def merge_raster_bands(rgb, ir, output_file_path):
 
     rgb_path = rgb
     ir_path = ir
-
-    #with open(rgb_path, 'wb') as f:
-    #    f.write(rgb.read())
-    #with open(ir_path, 'wb') as f:
-    #    f.write(ir.read())
 
 
     # Open the RGB image
@@ -188,9 +122,6 @@ def merge_raster_bands(rgb, ir, output_file_path):
     output_ds = None
     rgb_ds = None
     ir_ds = None
-
-    #os.remove(rgb_path)
-    #os.remove(ir_path)
 
 
 """
@@ -357,7 +288,6 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
 
 
     with rasterio.open(rgb_files[0]) as src:
-        #with rasterio.open(ir_files[0]) as src:
         try:
             file_crs = src.crs.to_epsg()
         except AttributeError as e:
@@ -370,17 +300,17 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
     if merge_channels == "rgb":
         for rgb_file in rgb_files:
             print(rgb_file)
-            if file_crs == None:
+            if file_crs == None: # for images without defined crs the input crs is assumed
                 print("no file_crs")
                 file_crs_manual = input_raster_crs
                 with rasterio.open(rgb_file) as src:
-                    profile = src.profile  # Metadaten der Datei übernehmen
-                    profile.update(crs=file_crs_manual)  # Koordinatensystem setzen
+                    profile = src.profile  # extract metadata
+                    profile.update(crs=file_crs_manual)  # define crs
 
                     new_rgb_file = str(Path(rgb_file).with_name(Path(rgb_file).stem + "_2" + Path(rgb_file).suffix))
                     print(new_rgb_file)
                     with rasterio.open(new_rgb_file, "w", **profile) as dst:
-                        dst.write(src.read())  # Bilddaten unverändert speichern
+                        dst.write(src.read())  # save image data without changes but with set crs
             else:
                 file_crs_manual = file_crs
                 new_rgb_file = rgb_file
@@ -399,21 +329,18 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
                     polygon = feature
                     break
             if polygon is None:
-                print(f"Fehler: Kein Polygon mit dem Namen '{polygon_name}' gefunden.")
+                print(f"Error: no polygon was found for name: '{polygon_name}'.")
                 exit()
             geom = polygon.GetGeometryRef()
 
             _, _, _, _, new_geom = func.transform_to_target_crs(geom, source_epsg_int=source_epsg_int,
                                                            target_epsg_int=file_crs_manual)
 
-            # x_min, y_min, x_max, y_max = func.get_tile_bounds(reprojected_ir_path)
             x_min, y_min, x_max, y_max = func.get_tile_bounds(new_rgb_file)
 
             intersects = polygon_partition_intersect(new_geom, x_min, y_min, x_max, y_max)
 
             if intersects:
-                # reprojected_rgb_path = os.path.join(str(input_folder), "reprojected"+os.path.basename(rgb_file))
-                # reproject_tif(rgb_file, reprojected_rgb_path, target_crs)
                 print("intersects")
                 shutil.copy2(new_rgb_file, output_file)
 
@@ -451,9 +378,6 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
             output_file = os.path.join(str(output_folder),os.path.basename(rgb_file).replace("rgb", "rgbi"))
             print(output_file)
 
-            #reprojected_ir_path = os.path.join(str(input_folder), "reprojected"+os.path.basename(ir_file))
-            #reproject_tif(ir_file, reprojected_ir_path, target_crs)
-
             ######### shapefile #############
             driver = ogr.GetDriverByName('ESRI Shapefile')
             dataSource = driver.Open(shapefile_path, 0)  # 0 means read-only.
@@ -466,46 +390,39 @@ def main(input_folder, year, polygon_name, output_name, shapefile_path, target_c
                     polygon = feature
                     break
             if polygon is None:
-                print(f"Fehler: Kein Polygon mit dem Namen '{polygon_name}' gefunden.")
+                print(f"Error: no polygon was found for name: '{polygon_name}'.")
                 exit()
             geom = polygon.GetGeometryRef()
 
 
             _, _, _, _, new_geom = func.transform_to_target_crs(geom, source_epsg_int=source_epsg_int, target_epsg_int=file_crs_manual)
 
-            #x_min, y_min, x_max, y_max = func.get_tile_bounds(reprojected_ir_path)
             x_min, y_min, x_max, y_max = func.get_tile_bounds(new_ir_file)
 
 
             intersects = polygon_partition_intersect(new_geom, x_min, y_min, x_max, y_max)
 
             if intersects:
-                #reprojected_rgb_path = os.path.join(str(input_folder), "reprojected"+os.path.basename(rgb_file))
-                #reproject_tif(rgb_file, reprojected_rgb_path, target_crs)
                 print("intersects")
                 merge_raster_bands(new_rgb_file, new_ir_file, output_file)
-                #merge_raster_bands2(new_rgb_file, new_ir_file, output_file)
-                reduce_raster_bands_to_rgb(new_rgb_file, output_file)
 
     # merge and reproject files in output folder:
     merge_files_adapted(str(output_folder), output_name, input_folder, file_number, target_crs, file_type=year) # includes reprojection
-    #reprojected_path = os.path.join(input_folder, f"{output_name}_{year}_merged_25832.tif")
-    #reproject_tif(os.path.join(input_folder, f"{output_name}_{year}_merged.tif"), reprojected_path, target_crs)
 
 
-"""
-# Example:
-shapefile_path = r"PATH_TO_SHAPE"
-target_crs = 25832
+
+############### Example to merge and reproject extracted RGB and IR images: #################
+# shapefile_path = r"PATH" # Path to shape file
+# target_crs = 25832  # EPSG-Code, default: 25832
+#
+#
+# input_folder = r"PATH" # Folder where the extracted, unmerged data is stored
+# polygon_name = "polygon_name" # Name of the polygon in the shapefile
+# output_name = "output_file_name" # Name of the output file without extensions
+# year = 2021 # Acquisition year of your data, e.g. 2021
+#
+# main(input_folder, year, polygon_name, output_name, shapefile_path, target_crs)
 
 
-input_folder = r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\scripted\files\EPSG_5650_Rüthnicker Heide_2016"
-polygon_name = "Rüthnicker Heide"
-output_name = "Rüthnicker_Heide"
-year = 2016
-main(input_folder, year, polygon_name, output_name, shapefile_path, target_crs)
-
-
-# image in rgbi format and correct coordinate systme:
-merge_raster_bands3(r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021.tif", r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\fertig\Kuhlmorgen_2021_rgb.tif")
-"""
+### extract rgb bands from an image in rgbi format and correct coordinate system: ###
+# reduce_raster_bands_to_rgb(r"RGBI_output_file.tif", r"RGB.tif")

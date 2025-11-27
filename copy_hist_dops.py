@@ -53,6 +53,7 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
                         file_names.append(os.path.join(folder, f"dop20{format_key}_33{x}_{y}_{patch_length}_{state}.tif"))
                         file_names.append(os.path.join(folder, f"dop20{format_key}_33{str(x)[0:3]}_{y}_{patch_length}_{state}.tif"))
                         file_names.append(os.path.join(folder, f"dop20{format_key}_33_{str(x)[0:3]}_{y}_{patch_length}.tif"))
+                        file_names.append(os.path.join(folder, f"dop20{format_key}_33_{str(x)[0:3]}_{y}_{patch_length}_{state}_{year}.tif"))
                         continue
                     elif epsg_int == 25832 and state == "ni":
                         file_names.append(os.path.join(folder, f"dop20{format_key}_32{x}_{y}_{patch_length}_{state}.tif"))
