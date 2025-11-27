@@ -83,23 +83,17 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
         print("unknown format")
         exit()
 
-    #print(input_folder, year, state, epsg_int)
     input_folder = find_single_state_folder(input_folder, year, state, epsg_int)
-    #print(input_folder)
     patch_length = check_single_consistent_number(input_folder)
-    #patch_length = 2
-    #print(patch_length)
 
     file_names = []
 
     x_min, x_max, y_min, y_max = func.encode_coordinates(x_start, x_end, y_start, y_end)
 
-    #print(x_min, x_max, y_min, y_max)
     for x in range(x_min, x_max, patch_length):
         for y in range(y_min, y_max, patch_length):
 
             # Skip extracting image file if the part does not intersect with the polygon
-            #filename_x_min, filename_y_min = encode_coordinates(x, x + 1, y, y + 1)
             if year <= 2012:
                 file_name = f"dop20c_{x}_{y}dr.tif"
                 file_names.append(os.path.join(input_folder, file_name))
@@ -148,114 +142,116 @@ def process_shapefile(polygon_name, state, year, input_folder, target_crs, shape
             break
 
     if polygon is None:
-        print(f"Fehler: Kein Polygon mit dem Namen '{polygon_name}' gefunden.")
+        print(f"Error: no polygon was found for name '{polygon_name}'.")
         return
 
     geom = polygon.GetGeometryRef()
 
     x_min, x_max, y_min, y_max, geom = func.transform_to_target_crs(geom, source_epsg_int, target_crs)
-    #x_start, x_end, y_start, y_end = encode_coordinates(target_crs,x_min, x_max, y_min, y_max)
 
     print(input_folder, year, state, target_crs)
 
-    # TODO: Logik zur Berechnung des Dateinamens basierend auf dem Extend
+    # TODO - longterm: Logik zur Berechnung des Dateinamens basierend auf dem Extend
     file_names = create_file_list(input_folder, year, state, x_min, x_max, y_min, y_max, target_crs)
 
-    #print(file_names)
-    #exit()
 
-    # Ziel-Unterordner erstellen
+
+    # create target subfolder
     if "/" in polygon_name:
         polygon_name = polygon_name.replace("/", "_")
     target_folder = os.path.join(output_folder, "EPSG_"+str(target_crs)+"_"+polygon_name + "_"+str(year))
     os.makedirs(target_folder, exist_ok=True)
 
-    # Alle .tif-Dateien aus dem Eingabeordner kopieren
+    # copy all TIFF files from the input folder
     for file in file_names:
         if os.path.isfile(file):
             dest_path = os.path.join(str(target_folder), os.path.basename(file))
             shutil.copy2(file, dest_path)
 
-    print(f"Dateien erfolgreich nach {target_folder} kopiert.")
+    print(f"Successfully copied files to {target_folder}.")
 
-# Beispielaufruf
 
-state_codes = {"Brandenburg":"bb",
-               "Berlin":"be",
-               "Baden Württemberg":"bw",
-               "Bayern":"by",
-               "Bremen":"hb",
-               "Hamburg":"hb",
-               "Hessen":"he",
-               "Mecklenburg Vorpommern":"mv",
-               "Niedersachsen":"ni",
-               "Nordrhein-Westfalen":"nw",
-               "Rheinland-Pfalz":"rp",
-               "Schleswig-Holstein":"sh",
-               #"Saarland":"sn",
-               "Sachsen":"sn",
-               "Sachsen-Anhalt":"st",
-               "Thüringen":"th"}
 
-state = "Sachsen-Anhalt"
-polygon_name = "Oranienbaumer Heide"
-year = 2015
-input_folder=r"F:\DOP-Hist\RGB"
+##### Example: #####
+#
+# # no publicly available data from Saarland
+# state_codes = {"Brandenburg":"bb",
+#                "Berlin":"be",
+#                "Baden Württemberg":"bw",
+#                "Bayern":"by",
+#                "Bremen":"hb",
+#                "Hamburg":"hb",
+#                "Hessen":"he",
+#                "Mecklenburg Vorpommern":"mv",
+#                "Niedersachsen":"ni",
+#                "Nordrhein-Westfalen":"nw",
+#                "Rheinland-Pfalz":"rp",
+#                "Schleswig-Holstein":"sh",
+#                "Sachsen":"sn",
+#                "Sachsen-Anhalt":"st",
+#                "Thüringen":"th"}
+#
+# state = "Sachsen-Anhalt"
+# polygon_name = "Oranienbaumer Heide"
+# year = 2015
+# input_folder=r"PATH\RGB" # run separately for RGB and IR paths on hard drive
+# shapefile_path=r"PATH"
+# output_folder=r"PATH"
 
-if state in state_codes.keys():
-    state = state_codes[state]
-
-################ if-else statements do not cover full folder structure, especially years <2012 may be different ##############
-if state == "th" and year >=2019:
-    target_crs = 25832
-elif state == "th" and year < 2018:
-    target_crs = 4647
-elif state == "th" and year == 2018:
-    target_crs = [4647, 25832]
-elif state == "by" and year == 2014:
-    target_crs = [25832, 31468]
-elif state == "by" and year == 2012:
-    target_crs = 31468
-elif state == "by" and year not in [2012, 2014]:
-    target_crs = 25832
-elif state == "bb" and year >2017:
-    target_crs = 25833
-elif state == "bb" and year == 2017:
-    target_crs = [25832,25833]
-elif state == "bb" and year == 2014:
-    target_crs = [25833, 5650]
-elif state == "bb" and year < 2017 and year != 2014:
-    target_crs = 5650
-elif state in ["st"]:
-    target_crs = 4647
-elif state == "mv" and year < 2019:
-    target_crs = 5650
-elif state == "mv" and year > 2018:
-    target_crs = 25833
-elif state in ["he", "ni", "nw", "rp"]:
-    target_crs = 25832
-elif state in ["sn"]:
-    target_crs = 25833
-elif state in ["sl"]:
-    target_crs = 31466
-else:
-    print("new crs")
-    exit()
-
-if type(target_crs) == int:
-    process_shapefile(polygon_name= polygon_name,
-                  state = state,
-                  year=year,
-                  input_folder=input_folder,
-                  target_crs= target_crs,
-                  shapefile_path=r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\vorschlagsliste_38_gebiete.shp",
-                  output_folder=r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\scripted\files")
-else:
-    for elem in target_crs:
-        process_shapefile(polygon_name=polygon_name,
-                          state=state,
-                          year=year,
-                          input_folder=input_folder,
-                          target_crs=elem,
-                          shapefile_path=r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\vorschlagsliste_38_gebiete.shp",
-                          output_folder=r"V:\2024_BfN_Naturerbe\Prozessierung\Datenbeschaffung\20250206_Datenbeschaffung_38_Flaechen\scripted\files")
+# if state in state_codes.keys():
+#     state = state_codes[state]
+#
+# ################ if-else statements do not cover full folder structure, especially years <2012 may be different ##############
+# if state == "th" and year >=2019:
+#     target_crs = 25832
+# elif state == "th" and year < 2018:
+#     target_crs = 4647
+# elif state == "th" and year == 2018:
+#     target_crs = [4647, 25832]
+# elif state == "by" and year == 2014:
+#     target_crs = [25832, 31468]
+# elif state == "by" and year == 2012:
+#     target_crs = 31468
+# elif state == "by" and year not in [2012, 2014]:
+#     target_crs = 25832
+# elif state == "bb" and year >2017:
+#     target_crs = 25833
+# elif state == "bb" and year == 2017:
+#     target_crs = [25832,25833]
+# elif state == "bb" and year == 2014:
+#     target_crs = [25833, 5650]
+# elif state == "bb" and year < 2017 and year != 2014:
+#     target_crs = 5650
+# elif state in ["st"]:
+#     target_crs = 4647
+# elif state == "mv" and year < 2019:
+#     target_crs = 5650
+# elif state == "mv" and year > 2018:
+#     target_crs = 25833
+# elif state in ["he", "ni", "nw", "rp"]:
+#     target_crs = 25832
+# elif state in ["sn"]:
+#     target_crs = 25833
+# elif state in ["sl"]:
+#     target_crs = 31466
+# else:
+#     print("new crs")
+#     exit()
+#
+# if type(target_crs) == int:
+#     process_shapefile(polygon_name= polygon_name,
+#                   state = state,
+#                   year=year,
+#                   input_folder=input_folder,
+#                   target_crs= target_crs,
+#                   shapefile_path=shapefile_path,
+#                   output_folder=output_folder)
+# else:
+#     for elem in target_crs:
+#         process_shapefile(polygon_name=polygon_name,
+#                           state=state,
+#                           year=year,
+#                           input_folder=input_folder,
+#                           target_crs=elem,
+#                           shapefile_path=shapefile_path,
+#                           output_folder=output_folder)

@@ -6,8 +6,6 @@ import download_by_shape_functions as func
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 import itertools
-import lmdb
-import os
 
 
 
@@ -31,13 +29,10 @@ def compute_mean_std(lmdb_path):
         for _, value in cursor:
             data_dict = load(value)
 
-            #print(data_dict["4"])
             curr_dict = data_dict["4"].astype(np.float32) / 255.0
             mean += curr_dict.sum()
-            #std += curr_dict.std()
 
 
-            #total_samples += data_dict["4"].shape[0] * data_dict["4"].shape[1]
             total_samples += data_dict["4"].size
 
             if counter % 1000 == 0:
@@ -55,7 +50,6 @@ def compute_mean_std(lmdb_path):
         for _, value in cursor:
             data_dict = load(value)
 
-            #print(data_dict["4"])
             curr_dict = data_dict["4"].astype(np.float32) / 255.0
 
             std += np.sum((curr_dict - mean)**2)
@@ -112,7 +106,6 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
 
     mean = total_sum / total_count
 
-    log.info(f"mean: {mean}")
     print(f"mean: {mean}")
     counter = 0
     # === SECOND PASS: Compute std ===
@@ -141,37 +134,27 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
 
     print(f"std: {std}")
 
-
     return mean, std
 
-log_file = r"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/norm_calculation.txt"
-log = func.config_logger("info", log_file)
-
-#final_mean, final_std = compute_mean_std("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.lmdb")
-
-###### Testing: ######
-
-overall_start = time.time()
-final_mean, final_std = compute_mean_std("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.lmdb")
-
-print(time.time() - overall_start)
-print(final_mean)
-print(final_std)
-
-"""
-
-middle = time.time()
-final_mean2, final_std2 = compute_mean_std_2pass("/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/train/full_train.lmdb")
-
-print(time.time() - middle)
 
 
+###### Example to calculate mean and std from an lmdb file: ######
+# final_mean, final_std = compute_mean_std("train.lmdb")
 
-
-log.info(f"std: {final_std2}")
-
-#print(final_mean)
-print(f"final_mean: {final_mean2}")
-#print(final_std)
-print(f"final_std: {final_std2}")
-"""
+###### Comparing different methods: ######
+# log_file = r"norm_calculation.txt"
+# log = func.config_logger("info", log_file)
+# overall_start = time.time()
+# final_mean, final_std = compute_mean_std("train.lmdb")
+# log.info(f"mean: {final_mean}, std: {final_std}")
+# print(time.time() - overall_start)
+# print(final_mean)
+# print(final_std)
+#
+# middle = time.time()
+# final_mean2, final_std2 = compute_mean_std_2pass("train.lmdb")
+#
+# print(time.time() - middle)
+# print(final_mean2)
+# print(final_std2)
+# log.info(f"mean2: {final_mean2}, std2: {final_std2}")

@@ -193,7 +193,7 @@ def get_state_code(state):
                    "Nordrhein-Westfalen":"nw",
                    "Rheinland-Pfalz":"rp",
                    "Schleswig-Holstein":"sh",
-                   #"Saarland":"sn",
+                   #"Saarland":"sn", # no publicly available data
                    "Sachsen":"sn",
                    "Sachsen-Anhalt":"st",
                    "Thüringen":"th",

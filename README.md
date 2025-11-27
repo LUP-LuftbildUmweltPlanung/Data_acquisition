@@ -102,6 +102,7 @@ as only these states provide publicly available historic aerial imagery.
 * If you want to save the output in lmdb format, follow the example at the bottom of tif_to_lmdb.py
 * Make sure that your shape file contains the columns "id" and "GEN" ("GEN" holds the full state names like "Brandenburg")
 * * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
+* * If you are missing hist_folder_structure_RGB_epsg.csv and hist_folder_structure_IR_epsg.csv" create them by running folder_structure_to_csv.py
 
 
 ## LMDB-entry to TIFF

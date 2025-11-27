@@ -291,13 +291,13 @@ def check_public_year_availability(state, key="public"):
                                "th": list(range(1943, 2024+1)),
                                "be": [year for year in list(range(2009,2018+1))+[2020]],
                                "hh": list(range(2021,2023+1))}
-    elif key == "vali": # 2017 - 2022 XXX nur noch bis 2019
-        public_availability = {"bb": list(range(2017, 2018 + 1)), #vorher mit 2020
-                               "mv": list(range(2017, 2019 + 1)), # vorher 2021 + 1
+    elif key == "vali": # 2017 - 2019
+        public_availability = {"bb": list(range(2017, 2018 + 1)),
+                               "mv": list(range(2017, 2019 + 1)),
                                "st": list(range(2017, 2019 + 1)),
-                               "th": list(range(2017, 2019+ 1)), # vorher 2021 + 1
-                               "be": list(range(2017, 2018 + 1)), # vorher mit 2020
-                               "hh": list(range(2021, 2019 + 1))} # vorher 2021 + 1
+                               "th": list(range(2017, 2019+ 1)),
+                               "be": list(range(2017, 2018 + 1)),
+                               "hh": list(range(2021, 2019 + 1))}
     elif key == "test": # x - 2016
         public_availability = {"bb": list(range(2009, 2016 + 1)),
                                "mv": list(range(2002, 2016 + 1)),
@@ -329,13 +329,13 @@ def get_state_and_crs_from_csv(state,year, format="rgb"):
     state = func.get_state_code(state)
     if format == "rgb":
         df_ir = None
-        df_rgb = pd.read_csv(r"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/hist_folder_structure_RGB_epsg.csv")
+        df_rgb = pd.read_csv(hist_folder_structure_rgb_epsg)
     elif format == "ir":
-        df_ir = pd.read_csv(r"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/hist_folder_structure_IR_epsg.csv")
+        df_ir = pd.read_csv(hist_folder_structure_ir_epsg)
         df_rgb = None
     elif format == "rgbi":
-        df_ir = pd.read_csv(r"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/hist_folder_structure_IR_epsg.csv")
-        df_rgb = pd.read_csv(r"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/hist_folder_structure_RGB_epsg.csv")
+        df_ir = pd.read_csv(hist_folder_structure_ir_epsg)
+        df_rgb = pd.read_csv(hist_folder_structure_rgb_epsg)
     else:
         print("unknown format")
         return None, state
@@ -611,44 +611,26 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
 
 random.seed(42)
 
-"""
-# Example:
-log_file = r"tif_to_lmdb_log.txt"
-log = func.config_logger("info", log_file)
 
-input_dir = r"/media/embedding/External HDD" #sth like C:
-
-
-lmdb_path = "PATH" # Path to output lmdb directory
-parquet_path = "PATH" # Path to output parquet metadata directory
-shapes = ["PATH_TO_SHAPE_1", "PATH_TO_SHAPE_2"]
-
-existing_ids_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files with ids that have already been processed
-all_keys_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files that store a matching set of shape ids and lmdb keys
-
-for i in range(len(shapes)):
-    print(shapes[i])
-    print(os.path.exists(shapes[i]))
-    process_rgbi_shapefile(shapes[i], parquet_path, all_ids_file=all_keys_files[i], existing_ids_file=existing_ids_files[i])
-"""
-
-"""
-##### TESTING #######
-lmdb_path = r"/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/"
-parquet_path = r"/home/embedding/Data_Center/Vera/GFM_aerial_datasets/vali/parquet"
-
-shapes = ["/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_keys.shp"]
-          #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_temp_ind_sample2.shp"]
-
-existing_ids_files = ["/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_keys_existing.parquet"]
-                      #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_temp_ind_sample2_existing.parquet"]
-all_keys_files = ["/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_keys.parquet"]
-                  #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/small_sample/test_temp_ind/new2/test_temp_ind_sapmle2_all_ids.parquet"]
-
-for i in range(len(shapes)):
-    print(shapes[i])
-    #shapefile_path = path
-    process_rgbi_shapefile(shapes[i], parquet_path, all_ids_file=all_keys_files[i], existing_ids_file=existing_ids_files[i])
-
-
-"""
+##### Example:
+#
+# hist_folder_structure_rgb_epsg = r"PATH\hist_folder_structure_RGB_epsg.csv" # path to csv with folder structure of RGB tifs
+# hist_folder_structure_ir_epsg = r"PATH\hist_folder_structure_IR_epsg.csv" # path to csv with folder structure of IR tifs
+#
+# log_file = r"tif_to_lmdb_log.txt"
+# log = func.config_logger("info", log_file)
+#
+# input_dir = r"PATH" # path to harddrive, sth like C:
+#
+#
+# lmdb_path = "PATH" # Path to output lmdb directory
+# parquet_path = "PATH" # Path to output parquet metadata directory
+# shapes = ["PATH_TO_SHAPE_1", "PATH_TO_SHAPE_2"]
+#
+# existing_ids_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files with ids that have already been processed
+# all_keys_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files that store a matching set of shape ids and lmdb keys
+#
+# for i in range(len(shapes)):
+#     print(shapes[i])
+#     print(os.path.exists(shapes[i]))
+#     process_rgbi_shapefile(shapes[i], parquet_path, all_ids_file=all_keys_files[i], existing_ids_file=existing_ids_files[i])

@@ -135,20 +135,6 @@ def count_lmdb_keys_and_prefixes_2(path_to_lmdb):
             counter +=1
         return prefixes
 
-def count_lmdb_keys_and_prefixes_3(path_to_lmdb):
-    """Reads all keys in an lmdb and extract keys of format 'minX_minY'. With counter to track progress."""
-
-    env = lmdb.open(path_to_lmdb, readonly=True)
-    prefixes = set()
-    counter = 0
-    with env.begin() as txn:
-        with txn.cursor() as cursor:
-            prefixes.update(f"{key.decode().split('_')[0]}_{key.decode().split('_')[1]}" for key, _ in cursor)
-            if counter % 1000 == 0:
-                print(counter)
-            counter +=1
-        return prefixes
-
 def merge_raster_to_lmdb(img, path_to_lmdb, metadata, ir=None, acquisition_date=None):
     """Reads rgb and optionally ir tif file and adds it as entry to an lmdb."""
 

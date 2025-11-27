@@ -69,16 +69,14 @@ def check_key_batch(args):
 
 
 def check_files(lmdb_path, parquet_path, num_workers=1, batch_size=1000):
-    # === Parquet laden ===
-    #df = pd.read_parquet(parquet_path, columns=["lmdb_key","crs"])
-    df = pd.read_parquet(parquet_path)[["crs"]]  # nur 'crs'
+    # load parquet
+    df = pd.read_parquet(parquet_path)[["crs"]]
     df = df.reset_index()
     df["lmdb_key"] = df["lmdb_key"].astype(str)
     parquet_keys = set(df["lmdb_key"])
-    #parquet_dict = dict(zip(df["lmdb_key"], df["crs"]))
     df = df.set_index("lmdb_key")
 
-    # === LMDB öffnen ===
+    # open lmdb
     env = lmdb.open(lmdb_path, readonly=True, lock=False)
     batches = list(key_batches_from_cursor_check(env, batch_size=batch_size))
 
@@ -112,19 +110,17 @@ def check_files(lmdb_path, parquet_path, num_workers=1, batch_size=1000):
         for key_bytes, value in tqdm(cursor, desc="Checking LMDB entries"):
             key = key_bytes.decode()
 
-            # --- Check 1: Key muss in Parquet sein ---
-            #if key not in parquet_keys:
-            #    missing_keys.append(key)
+            # Check 1: Key is part of parquet file - finish check at the end
             lmdb_keys.add(key)
 
-            # --- Check 2: Outer safetensor enthält keys "1"-"4" ---
+            # Check 2: Outer safetensor contains keys "1"-"4"
             outer_tensor = load(value)
             inner_keys = set(outer_tensor.keys())
             if inner_keys != {"1", "2", "3", "4"}:
                 invalid_safetensor_keys.append((key, inner_keys))
-                continue  # andere Checks sind sinnlos, wenn Keys fehlen
+                continue  # skip remaining checks if bands are not right
 
-            # --- Check 3+4: Wertebereiche prüfen & Länge 384 ---
+            # Check 3+4: correct value range 0-255 & array length is 384
             for band_key in inner_keys:
                 band_array = outer_tensor[band_key]
                 if band_array.size != 384*384:
@@ -133,29 +129,30 @@ def check_files(lmdb_path, parquet_path, num_workers=1, batch_size=1000):
                 if not (0 <= min_val <= max_val <= 255):
                     invalid_value_range.append((key, band_key, min_val, max_val))
 
-            # --- Check 5: CRS prüfen (aus Metadaten in Parquet) ---
+            # Check 5: correct crs
             crs = df.loc[df["lmdb_key"] == key, "crs"]
             if not crs.empty:
                 crs_values.add(crs.values[0])
 
+    # finish Check 1: parquet and lmdb keys match
     missing_in_lmdb = parquet_keys - lmdb_keys
     extra_in_lmdb = lmdb_keys - parquet_keys
 
-    # === Ergebnisse ausgeben ===
-    print(f"\n=== Ergebnisübersicht ===")
-    print(f"LMDB-Einträge mit ungültigen inneren Keys: {len(invalid_safetensor_keys)}")
+    # Results:
+    print(f"\nResults:")
+    print(f"LMDB entries with incorrect inner keys: {len(invalid_safetensor_keys)}")
     print(invalid_safetensor_keys)
-    print(f"Safetensor-Bänder mit ungültigem Wertebereich: {len(invalid_value_range)}")
+    print(f"Safetensor bands with incorrect value ranges: {len(invalid_value_range)}")
     print(invalid_value_range)
-    print(f"Bänder mit falscher Länge (≠ 384): {len(invalid_length)}")
+    print(f"Bands with incorrect length (!= 384): {len(invalid_length)}")
     print(invalid_length)
-    print(f"Anzahl unterschiedlicher CRS-Einträge: {len(crs_values)}")
-    print(f"CRS-Werte: {crs_values}")
+    print(f"Amount of different crs metadata entries: {len(crs_values)}")
+    print(f"CRS values: {crs_values}")
     print(f"Missing in lmdb: {len(missing_in_lmdb)}")
     print(missing_in_lmdb)
     print(f"Extra in lmdb: {len(extra_in_lmdb)}")
     print(extra_in_lmdb)
-    print(f"length of lmdb-file: {len(lmdb_keys)}, length of parquet-file: {len(parquet_keys)}")
+    print(f"Length of lmdb file: {len(lmdb_keys)}, length of parquet file: {len(parquet_keys)}")
     print(f"Number of corrupted keys in lmdb: {len(corrupted_keys)}")
     print(corrupted_keys)
     sum_lengths = sum([len(invalid_safetensor_keys), len(invalid_value_range), len(invalid_length), len(crs_values), len(missing_in_lmdb), len(extra_in_lmdb)])
@@ -166,59 +163,14 @@ def check_files(lmdb_path, parquet_path, num_workers=1, batch_size=1000):
 
 
 
-# === Pfade anpassen ===
-
-#### Test ####
-lmdb_paths = ["/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/vali_temp_ind_HH_with_test_swap.lmdb"]#,
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/test_temp_ind_noHH_with_vali_samples.lmdb",
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali_spati_temp_ind_HH_with_test_swap.lmdb", #908 extra in lmdb
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/vali_temp_ind_HH_with_test_swap.lmdb"] #803 extra in lmdb
-parquet_paths = ["/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/new_year_range_vali/parquet/vali_temp_ind_HH_with_test_swap_meta_merged11.parquet"]
-
-
-"""
-
-lmdb_paths = [#"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/test_spatially_independent_non_historic.lmdb",
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/test_spati_ind_historic.lmdb",
-              "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/vali_temp_ind_HH_with_test_swap.lmdb", #908 extra in lmdb
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/vali_spati_temp_ind_HH_with_test_swap.lmdb",#, #803 extra in lmdb
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files2/vali_spatially_independent_non_historic.lmdb",
-              #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/compact_files/vali_spatially_ind_historic.lmdb"
-
-            ]
-parquet_paths = [#"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/test_spatially_independent_non_historic_meta_merged.parquet",
-                 #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/test_spati_ind_historic_meta_merged.parquet",
-                 "/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/new_temp_ind/new_year_range_vali/parquet/vali_temp_ind_HH_with_test_swap_meta_merged4.parquet",
-                 #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/vali_spati_temp_ind_HH_with_test_swap_meta_merged2.parquet",
-                 #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/vali_spatially_independent_non_historic_meta_merged.parquet",
-                 #"/home/embedding/Data_Center/DataHouse/Gfm_aerial/datasets_boxes/big_files_safety_copy/vali_spatially_ind_historic_meta_merged.parquet"
-                 ]
-"""
-all_files = []
-for i in range(len(lmdb_paths)):
-
-    all_files.append(check_files(lmdb_paths[i], parquet_paths[i], num_workers=16))
-
-print(all_files)
-
-
-"""
-/home/embedding/miniconda3/envs/data_ac4/bin/python /home/embedding/Data_Center/qnap3b/MnD/projects/2024_11_14_MA_Vera/Code/check_consistency_lmdb_parquet.py 
-Checking LMDB entries: 52920it [40:46, 21.63it/s] 
-
-=== Ergebnisübersicht ===
-LMDB-Einträge mit ungültigen inneren Keys: 0
-[]
-Safetensor-Bänder mit ungültigem Wertebereich: 0
-[]
-Bänder mit falscher Länge (≠ 384): 0
-[]
-Anzahl unterschiedlicher CRS-Einträge: 1
-CRS-Werte: {'EPSG:25832'}
-Missing in lmdb: 0
-set()
-Extra in lmdb: 10
-{'689690_5667892_20190421', '691203_5601000_20190416', '687711_5680573_20170517', '675060_5631921_20190321', '618012_5764253_20170518', '619103_5712671_20190418', '642772_5784723_20170602', '655702_5583188_20170518', '611939_5753987_20190406', '682262_5596524_20170327'}
-length of lmdb-file: 52920, length of parquet-file: 52910
-[False]
-"""
+##### Example to check the consistency of lmdb and parquet files: #####
+#
+# lmdb_paths = ["PATH"] # dictionary with paths to folders with lmdb data file inside
+# parquet_paths = ["PATH"] # dictionary with parquet files corresponding to lmdb_paths
+#
+# all_files = []
+# for i in range(len(lmdb_paths)):
+#
+#     all_files.append(check_files(lmdb_paths[i], parquet_paths[i], num_workers=16))
+#
+# print(all_files)

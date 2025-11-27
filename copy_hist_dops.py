@@ -1,9 +1,6 @@
 import os
 import shutil
-#from osgeo import gdal, ogr, osr
 from osgeo import ogr
-#import numpy as np
-#import re
 from pathlib import Path
 
 import download_by_shape_functions as func
@@ -60,7 +57,7 @@ def create_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, 
                         file_names.append(os.path.join(folder, f"dop20{format_key}_32{x}_{y}.tif"))
                         continue
                     else:
-                        print("new_coordinate_system")
+                        print("new coordinate system")
                         continue
 
                     file_names.append(os.path.join(folder, file_name))
@@ -85,19 +82,18 @@ def process_shapefile(polygon_name, state, year, input_folder, target_crs, shape
             break
 
     if polygon is None:
-        print(f"Fehler: Kein Polygon mit dem Namen '{polygon_name}' gefunden.")
+        print(f"Error: No polygon was found for name '{polygon_name}'.")
         return
 
     geom = polygon.GetGeometryRef()
 
     # transform polygon-crs to crs of data folder
     x_min, x_max, y_min, y_max, geom = func.transform_to_target_crs(geom, source_epsg_int, target_crs)
-    #x_start, x_end, y_start, y_end = func.encode_coordinates(target_crs,x_min, x_max, y_min, y_max)
 
     print(input_folder, year, state, target_crs)
 
     # create list of files that intersect with the area
-    # TODO: Logik zur Berechnung des Dateinamens basierend auf dem Extend wie bei tif_to_lmdb.py
+    # TODO - longterm: Logik zur Berechnung des Dateinamens basierend auf dem Extend wie bei tif_to_lmdb.py
     file_names = create_file_list(input_folder, year, state, x_min, x_max, y_min, y_max, target_crs)
 
     # create target subfolder
@@ -155,35 +151,33 @@ def get_state_and_crs(state, year):
         target_crs = 31466
     else:
         print("new crs")
-        return None, state #exit()
+        return None, state
     return target_crs, state
 
 
 
-# Example:
-"""
-state = "Sachsen-Anhalt" # completely spelled out
-polygon_name = "Oranienbaumer Heide" # check for name in shape file attribute table
-year = 2015
-input_folder=r"F:\DOP-Hist\RGB" # parent directory that holds folders with data of different years
-
-target_crs, state = get_state_and_crs(state, year)
-
-if type(target_crs) == int:
-    process_shapefile(polygon_name= polygon_name,
-                  state = state,
-                  year=year,
-                  input_folder=input_folder,
-                  target_crs= target_crs,
-                  shapefile_path=r"PATH_TO_SHAPE",
-                  output_folder=r"PATH_TO_OUTPUT_FILES")
-else:
-    for elem in target_crs:
-        process_shapefile(polygon_name=polygon_name,
-                          state=state,
-                          year=year,
-                          input_folder=input_folder,
-                          target_crs=elem,
-                          shapefile_path=r"PATH_TO_SHAPE",
-                          output_folder=r"PATH_TO_OUTPUT_FILES")
-"""
+##### Example to copy tif files that intersect with the given polygon from harddrive to local folder: #####
+# state = "Sachsen-Anhalt" # state name, completely spelled out
+# polygon_name = "Oranienbaumer Heide" # name of the respective polygon, check for name in shape file attribute table
+# year = 2015 # acquisition year
+# input_folder=r"PATH\RGB" # run for RGB and IR folders separately, parent directory that holds folders with data of different years
+#
+# target_crs, state = get_state_and_crs(state, year)
+#
+# if type(target_crs) == int:
+#     process_shapefile(polygon_name= polygon_name,
+#                   state = state,
+#                   year=year,
+#                   input_folder=input_folder,
+#                   target_crs= target_crs,
+#                   shapefile_path=r"PATH_TO_SHAPE",
+#                   output_folder=r"PATH_TO_OUTPUT_FILES")
+# else:
+#     for elem in target_crs:
+#         process_shapefile(polygon_name=polygon_name,
+#                           state=state,
+#                           year=year,
+#                           input_folder=input_folder,
+#                           target_crs=elem,
+#                           shapefile_path=r"PATH_TO_SHAPE",
+#                           output_folder=r"PATH_TO_OUTPUT_FILES")

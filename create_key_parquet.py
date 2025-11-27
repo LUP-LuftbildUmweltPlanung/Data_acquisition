@@ -45,7 +45,7 @@ def write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parque
 
     n_keys, prefixes = lmdb_fkt.count_lmdb_keys_and_prefixes(existing_keys_lmdb, len(all_ids))
     if n_keys == None and prefixes == None:
-        print("all keys exist")
+        print("number of existing_keys is > or = to number of entries in all_ids")
         return
 
     print(n_keys)
@@ -155,7 +155,7 @@ def main(shapefile_path, parquet_path):
     write_all_ids_to_parquet(shapefile_path, parquet_path)
     print(f"Execution time for  {shapefile_path}: {time.time() - starttime} seconds")
 
-########## Example usage to create allkeys.parquet: ############
+########## Example usage to create different lmdb_key-shape_id match files in parquet format: ############
 
 ### ... to create allkeys.parquet: ###
 # shapefile_path = r"PATH"
@@ -169,3 +169,10 @@ def main(shapefile_path, parquet_path):
 # input_parquet = r"PATH"
 # output_parquet = r"PATH"
 # full_id_lmdb_key_parquet(shapefile_path, input_parquet, output_parquet)
+
+
+### ... to write the keys from an existing_keys_lmdb in a parquet file: ###
+# all_ids_file = r"PATH"
+# existing_keys_lmdb = r"PATH"
+# output_parquet_path = r"PATH"
+# write_existing_ids_from_lmdb(all_ids_file, existing_keys_lmdb, output_parquet_path)
