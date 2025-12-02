@@ -1,4 +1,7 @@
 import os
+from importlib.metadata import metadata
+
+import pandas as pd
 from osgeo import ogr, gdal, osr
 from owslib.wms import WebMapService
 import glob
@@ -10,6 +13,11 @@ from tqdm import tqdm
 from PIL import Image
 import download_by_shape_functions as func
 from pathlib import Path
+import gc
+
+import encode_to_lmdb_parquet as lmdb_fkt
+
+
 
 
 def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width=None, img_height=None, r_aufl=None):
@@ -141,8 +149,7 @@ def merge_raster_bands(rgb, ir, output_file_path):
     os.remove(rgb_path)
     os.remove(ir_path)
 
-def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, img_width, img_height, r_aufl):
-
+def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=None):
     """Get image data for a specified frame and write it into tif file"""
 
     # Adjust x_max and y_max if fixed size is defined
@@ -154,53 +161,103 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
         # Estimate size based on resolution and bounding box
         size = (round((x_max - x_min) / r_aufl), round((y_max - y_min) / r_aufl))
 
-    # extract rgb image
-    try:
-        img = wms.getmap(  # CHANGE this is the image as a variable
-            layers=[layer],
-            srs=epsg_code,
-            bbox=(x_min, y_min, x_max, y_max),
-            # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-            size=size,
-            format=img_format)
+    extract_meta = {}
+    new_safetensor_dict = {}
 
-    except:
-        sub_log.error("Layer 1: Can't get map for layer %s in %s from : %s" % (layer, img_format, wms_ad))
+    # extract rgb image
+    retry_delays = [60, 600, 1800, 3600]
+
+    success = False
+    for attempt, delay in enumerate(retry_delays):
+        try:
+            img = wms.getmap(
+                layers=[layer],
+                srs=epsg_code,
+                bbox=(x_min, y_min, x_max, y_max),
+                size=size,
+                format=img_format
+            )
+            success = True
+            break  # Wenn erfolgreich, verlasse die Schleife
+        except Exception as e:
+            sub_log.warning(
+                f"Attempt {attempt + 1}: Error extracting the map for layer {layer} – Waiting {delay // 60} minutes. Error: {e}")
+            time.sleep(delay)
+
+    if not success:
+        sub_log.error(
+            "Layer 1: Can't get map for layer %s in %s from: %s. Exiting after multiple attempts." % (layer,
+                                                                                                          img_format,
+                                                                                                          wms_ad))
+        raise RuntimeError("WMS GetMap failed after multiple attempts.")
+
+
+    if "img" in locals() and parquet_path:
+        sub_log.debug("img in locals")
+        try:
+            extract_meta.update(lmdb_fkt.get_meta_from_img(img))
+        except Exception as e:
+            sub_log.debug(f"extract_meta error: {e}")
+        sub_log.debug(extract_meta)
+
+    sub_log.debug(f"extract meta after img: {extract_meta}")
 
     # extract ir image
     if layer2 != None and layer2 != "None" and layer2 != "nan":
         img2 = None
-        try:
-            img2 = wms.getmap(
-                layers=[layer2],
-                srs=epsg_code,
-                bbox=(x_min, y_min, x_max, y_max),
-                # size=(round(x_max - x_min) / r_aufl, round(y_max - y_min) / r_aufl),
-                size=size,
-                format=img_format)
-        except:
+
+        success = False
+        for attempt, delay in enumerate(retry_delays):
+            try:
+                img2 = wms.getmap(
+                    layers=[layer2],
+                    srs=epsg_code,
+                    bbox=(x_min, y_min, x_max, y_max),
+                    size=size,
+                    format=img_format)
+                success = True
+                break  # Break if successfull
+            except Exception as e:
+                sub_log.warning(
+                    f"Attempt {attempt + 1}: Error extracting the map for layer {layer} – Waiting {delay // 60} minutes. Error: {e}")
+                time.sleep(delay)
+        if not success:
             sub_log.error("Layer 2: Can't get map for layer %s in %s from : %s" % (layer2, img_format, wms_ad))
+            raise RuntimeError("WMS GetMap failed after multiple attempts.")
+
+        if "count" in extract_meta:
+            sub_log.debug("meta count exists")
+            extract_meta["count"] +=1
+        else:
+            sub_log.debug("no meta count")
 
         if img2 is not None:
             sub_log.debug("before merge_raster_bands")
             try:
-                merge_raster_bands(img, img2, output_file_path)
+                if lmdb_path:
+                    sub_log.debug("lmdb_path")
+                    extract_meta["lmdb_key"], new_safetensor_dict = lmdb_fkt.merge_raster_to_safetensor(img, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
+                else:
+                    sub_log.debug("else")
+                    merge_raster_bands(img, img2, output_file_path)
             except Exception as e:
                 sub_log.error("can't run merge_raster_bands: %s" % e)
             sub_log.debug("after merge_raster_bands")
 
     # historic Brandenburg wms server contains images in png format
-    if state == "BB_history":
+    if state == "BB_history" and lmdb_path is None: # ToDo: not necessary for lmdb!!!
         png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max)  # CHANGE if wms server is in png
     elif state != "BB_history" and os.path.isfile(
-            output_file_path) is False:  # only if it wasn't drawn before so only one layer exists or sth went wrong
+            output_file_path) is False and lmdb_path is None:  # only if it wasn't drawn before so only one layer exists or sth went wrong
+        # ToDo: remove for lmdb!!!
         try:
             out = open(output_file_path, 'wb')  # output path
             out.write(img.read())  # CHANGE here it writes the image if it's just one layer
             out.close()
         except:
             sub_log.error("Could not write data to file %s." % output_file_path)
-
+    sub_log.debug(f"extract meta: {extract_meta}")
+    return extract_meta, new_safetensor_dict
 
 
 def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
@@ -249,25 +306,8 @@ def png_to_tiff(img, output_file_path, x_min, y_min, x_max, y_max):
         print("Failed to open the TIFF file %s." %output_file_path)
 
 
-def get_tile_bounds(file_path):
-    """Extract bounding box from a single TIFF file."""
-    ds = gdal.Open(file_path)
-    gt = ds.GetGeoTransform()
-    min_x = gt[0]
-    max_y = gt[3]
-    max_x = min_x + (ds.RasterXSize * gt[1])
-    min_y = max_y + (ds.RasterYSize * gt[5])
-    ds = None
-    return (min_x, min_y, max_x, max_y)
-
-def sort_files_by_spatial_proximity(input_files):
-    """Sort files based on their spatial proximity."""
-    tile_bounds = [(f, get_tile_bounds(f)) for f in input_files]
-    # Sort by min_x and then by min_y to ensure proximity
-    sorted_files = sorted(tile_bounds, key=lambda x: (x[1][0], x[1][1]))
-    return [f[0] for f in sorted_files]
-
 def get_nodata_from_raster(raster_path):
+    """Get nodata values from a raster image"""
     ds = gdal.Open(raster_path)
     if ds is not None and ds.GetRasterBand(1) is not None:
         nodata = ds.GetRasterBand(1).GetNoDataValue()
@@ -304,7 +344,7 @@ def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AO
     if not input_files:
         raise FileNotFoundError(f"No TIFFs found in {input_dir} for type '{file_type}'")
 
-    input_files = sort_files_by_spatial_proximity(input_files)
+    input_files = func.sort_files_by_spatial_proximity(input_files)
     print(f" Total input files: {len(input_files)}")
 
     # Construct suffix for output file
@@ -338,10 +378,11 @@ def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AO
     gdal.Translate(final_output_file, vrt, options=translate_options)
     print(f" Merged output saved at {final_output_file}")
 
-def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type):
+def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type, acquisition_date=None):
     """Call several functions to get raster data for dop and meta files"""
-
     sub_log.debug("in extract_raster_data_process()")
+    new_metadata = {}
+    new_safetensor_dict = {}
 
     #dop
     if calc_type == "wms" and wms_calc == True and wms_var != None:
@@ -354,8 +395,7 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
         else:
             sub_log.debug("file does not exist yet")
             try:
-                extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path, img_width,
-                                    img_height, r_aufl)
+                new_metadata, new_safetensor_dict = extract_raster_data(wms_var, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=acquisition_date)
             except Exception as e:
                 sub_log.error("Error in extract_raster_data %s" %e)
 
@@ -395,10 +435,14 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
 
             bildflug_array = np.full((rows, cols), bildflug_date)
 
-            try:
-                write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width, img_height, r_aufl)
-            except:
-                sub_log.error("Cannot write meta raster data for %s" % output_file_name)
+            if lmdb_path is None:
+                try:
+                    write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg_code_int, img_width, img_height, r_aufl) # ToDo: nicht für lmdb schreiben?
+                except:
+                    sub_log.error("Cannot write meta raster data for %s" % output_file_name)
+        new_metadata.update({"acquisition": bildflug_date})
+
+    return new_metadata, new_safetensor_dict
 
 def try_connect_wms(url, versions):
     """Attempt to connect to a WMS server using multiple versions and return the successful one."""
@@ -412,34 +456,20 @@ def try_connect_wms(url, versions):
             sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
     return None, None  # If all attempts fail
 
-def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
+def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min, x_max,
                        y_max, seen_tiles):
     """Process each polygon of a file and handle WMS version selection."""
 
     sub_log.debug("Processing %s" % output_file_name)
 
+    new_metadata = {}
+    new_safetensor_dict = {}
+
     maxwidth, maxheight = get_max_image_size()
     reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
+    sub_log.debug(f"reduce_p_factor: {reduce_p_factor}")
 
-    wms, wms_meta = None, None
-    wms_version_used, wms_meta_version_used = None, None
-
-    if wms_calc:
-        wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
-        if wms is None:
-            sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
-
-    if meta_calc:
-        wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
-        if wms_meta is None:
-            sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
-
-    if wms_version_used:
-        print(f" Data will download using WMS version: {wms_version_used}")
-    if wms_meta_version_used:
-        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
-
-    if reduce_p_factor > 1:
+    if reduce_p_factor > 1 and lmdb_path is None:
         print(f"Extracting raster data from wms ({reduce_p_factor ** 2} parts) ...")
 
         check_file_dop = os.path.join(output_wms_path, output_file_name + "_merged.tif")
@@ -507,6 +537,7 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
                 part += 1
                 output_file_name_n = output_file_name + f"_{part}.tif"
                 try:
+                    # ToDo longterm: lmdb adaptation for polygon partitions #####################
                     extract_raster_data_process(output_wms_dop_path, output_file_name_n, wms, epsg_code, epsg_code_int,
                                                 x_min_n, y_min_n, x_max_n, y_max_n, "wms")
                     extract_raster_data_process(output_wms_meta_path, output_file_name_n, wms_meta, epsg_code,
@@ -528,14 +559,20 @@ def polygon_processing(geom, output_wms_path, output_file_name, epsg_code, epsg_
             return
 
         try:
-            extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
-                                        y_min, x_max, y_max, "wms")
-            extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
-                                        epsg_code_int, x_min, y_min, x_max, y_max, "meta")
+            acquisition_date, _ = extract_raster_data_process(output_wms_path, output_file_name_n, wms_meta, epsg_code,
+                                                           epsg_code_int, x_min, y_min, x_max, y_max, "meta")
+            acquisition_date.setdefault("acquisition", None)
+            new_metadata, new_safetensor_dict = extract_raster_data_process(output_wms_path, output_file_name_n, wms, epsg_code, epsg_code_int, x_min,
+                                        y_min, x_max, y_max, "wms", acquisition_date=acquisition_date["acquisition"])
+
+            new_metadata.update(acquisition_date)
+            print(f"updated new_metadata: {new_metadata}")
         except:
             sub_log.error("Cannot run process function to extract raster data for %s." % output_file_name_n)
+
+    return new_metadata, new_safetensor_dict
             
-def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
+def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_ids_file=None, AOI=None, year=None):
     """Processes each shapefile either per polygon or as a whole if merge is enabled."""
 
     sub_log.debug("Processing shape file: %s" % shapefile_path)
@@ -559,83 +596,229 @@ def process_file(shapefile_path, output_wms_path, AOI=None, year=None):
         epsg_code_int = 25833
         epsg_code = "EPSG:25833"
 
-    if merge:
-        print(" Merging mode enabled: using full shapefile extent")
-        seen_tiles = set()
+    if not lmdb_path: # ToDo longterm: add lmdb application for merging!!!
+        if merge:
+            print(" Merging mode enabled: using full shapefile extent")
 
-        # Union all polygons to get the full extent
-        full_geom = None
-        x_min, y_min, x_max, y_max = None, None, None, None
+            wms, wms_meta = None, None
+            wms_version_used, wms_meta_version_used = None, None
 
-        for i, feature in enumerate(inLayer):
-            geom = feature.GetGeometryRef().Clone()
-            extent = geom.GetEnvelope()
+            if wms_calc:
+                wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+                if wms is None:
+                    sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
 
-            # Update bounds
-            if x_min is None:
-                x_min, y_min, x_max, y_max = extent[0], extent[2], extent[1], extent[3]
-            else:
-                x_min = min(x_min, extent[0])
-                y_min = min(y_min, extent[2])
-                x_max = max(x_max, extent[1])
-                y_max = max(y_max, extent[3])
+            if meta_calc:
+                wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+                if wms_meta is None:
+                    sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
 
-            # Combine geometries
-            if full_geom is None:
-                full_geom = geom
-            else:
-                full_geom = full_geom.Union(geom)
+            if wms_version_used:
+                print(f" Data will download using WMS version: {wms_version_used}")
+            if wms_meta_version_used:
+                print(f" Meta data will download using WMS version: {wms_meta_version_used}")
 
-        output_file_name_n = output_file_name.split(".")[0]
+            seen_tiles = set()
 
-        polygon_processing(full_geom, output_wms_path, output_file_name_n,
-                           epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
+            # Union all polygons to get the full extent
+            full_geom = None
+            x_min, y_min, x_max, y_max = None, None, None, None
 
-        # ADD HERE
-        #base_filename = os.path.splitext(shapefile_name)[0]
-        base_filename = output_file_name_n
-        dop_folder_path = os.path.join(output_wms_path, "dop")
-        meta_folder_path = os.path.join(output_wms_path, "meta")
+            for i, feature in enumerate(inLayer):
+                geom = feature.GetGeometryRef().Clone()
+                extent = geom.GetEnvelope()
 
-        try:
-            print(f"Merging DOP for shapefile: {base_filename}")
-            merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
-            print(" DOP merge done.")
-        except Exception as e:
-            print(f" Failed to merge DOP for {base_filename}: {e}")
+                # Update bounds
+                if x_min is None:
+                    x_min, y_min, x_max, y_max = extent[0], extent[2], extent[1], extent[3]
+                else:
+                    x_min = min(x_min, extent[0])
+                    y_min = min(y_min, extent[2])
+                    x_max = max(x_max, extent[1])
+                    y_max = max(y_max, extent[3])
 
-        try:
-            print(f" Merging META for shapefile: {base_filename}")
-            merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
-            print(" META merge done.")
-        except Exception as e:
-            print(f" Failed to merge META for {base_filename}: {e}")
+                # Combine geometries
+                if full_geom is None:
+                    full_geom = geom
+                else:
+                    full_geom = full_geom.Union(geom)
+
+            output_file_name_n = output_file_name.split(".")[0]
+
+            polygon_processing(wms, wms_meta, full_geom, output_wms_path, output_file_name_n,
+                               epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, seen_tiles)
+
+            # ADD HERE
+            #base_filename = os.path.splitext(shapefile_name)[0]
+            base_filename = output_file_name_n
+            dop_folder_path = os.path.join(output_wms_path, "dop")
+            meta_folder_path = os.path.join(output_wms_path, "meta")
+
+            try:
+                print(f"Merging DOP for shapefile: {base_filename}")
+                merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
+                print(" DOP merge done.")
+            except Exception as e:
+                print(f" Failed to merge DOP for {base_filename}: {e}")
+
+            try:
+                print(f" Merging META for shapefile: {base_filename}")
+                merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
+                print(" META merge done.")
+            except Exception as e:
+                print(f" Failed to merge META for {base_filename}: {e}")
+        else:
+            print(" Merging mode disabled: processing polygons separately")
+            polygon = 0
+            polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
+
+            wms, wms_meta = None, None
+            wms_version_used, wms_meta_version_used = None, None
+
+            if wms_calc:
+                wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+                if wms is None:
+                    sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+            if meta_calc:
+                wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+                if wms_meta is None:
+                    sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+            if wms_version_used:
+                print(f" Data will download using WMS version: {wms_version_used}")
+            if wms_meta_version_used:
+                print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
+            for feature in inLayer:
+                seen_tiles = set()  # reset per polygon
+
+                print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+                geom = feature.GetGeometryRef()
+                extent = geom.GetEnvelope()
+
+                if state == "BB_history":
+                    years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
+                    output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}_{years}"
+                else:
+                    output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
+
+                polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name_n,
+                                   epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
+
+                polygon += 1
+                polygon_progress.update(1)
 
     else:
         polygon = 0
         polygon_progress = tqdm(total=len(inLayer), desc='Processing polygons', position=1, leave=True)
 
+
+        if parquet_path:
+            sub_log.debug(parquet_path)
+            sub_log.debug(shapefile_name)
+            shapefile_meta_folder = func.create_directory(parquet_path, str(Path(shapefile_name).stem))
+            sub_log.debug(shapefile_meta_folder)
+            output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
+
+        keys_to_process = pd.DataFrame(columns=["id", "prefix"])
+        if lmdb_path:
+            current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
+            keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
+
+        metadata_list = []
+        safetensor_dict = {}
+        id_key_df = pd.DataFrame(columns=["id", "prefix"])
+
+        wms, wms_meta = None, None
+        wms_version_used, wms_meta_version_used = None, None
+
+        if wms_calc:
+            wms, wms_version_used = try_connect_wms(wms_ad, ['1.3.0', '1.1.1'])
+            if wms is None:
+                sub_log.error(f"Failed to connect to dop WMS: {wms_ad}")
+
+        if meta_calc:
+            wms_meta, wms_meta_version_used = try_connect_wms(wms_ad_meta, ['1.3.0', '1.1.1'])
+            if wms_meta is None:
+                sub_log.error(f"Failed to connect to meta WMS: {wms_ad_meta}")
+
+        if wms_version_used:
+            print(f" Data will download using WMS version: {wms_version_used}")
+        if wms_meta_version_used:
+            print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
+        keys_to_process_set = set(keys_to_process["id"].values)
         for feature in inLayer:
+            feature_id = feature.GetField("id")
+            if feature_id not in keys_to_process_set:
+                print("skipping ", feature_id)
+                polygon += 1
+                polygon_progress.update(1)
+                continue
+
             seen_tiles = set()  # reset per polygon
 
-            print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+            print(f"\nProcessing polygon:  {polygon + 1} /{len(inLayer)} ({feature_id})")
             geom = feature.GetGeometryRef()
             extent = geom.GetEnvelope()
 
+            feature_prefix = f"{int(extent[0])}_{int(extent[2])}"
+
             if state == "BB_history":
-                polygon_code_map = {0: 60, 1: 65, 2: 75, 3: 82, 4: 83}
-                polygon_code = polygon_code_map.get(polygon, polygon)
                 years = "hist-" + layer_meta.split("_")[1].split("-", 1)[1]
-                output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon_code}_{years}"
+                output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}_{years}"
             else:
                 output_file_name_n = f"{output_file_name.split('.')[0]}_{polygon}"
 
-            polygon_processing(geom, output_wms_path, output_file_name_n,
+            polygon_meta, new_safetensor_dict = polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name_n,
                                epsg_code, epsg_code_int, extent[0], extent[2], extent[1], extent[3], seen_tiles)
 
+            metadata_list.append(polygon_meta)
+            safetensor_dict.update(new_safetensor_dict)
+            id_key_df = pd.concat([id_key_df, pd.DataFrame({"id":[feature_id], "prefix": [feature_prefix]})], ignore_index=True)
+            del polygon_meta
+            del new_safetensor_dict
+            gc.collect()
+
+            if polygon % 1000 == 0 and polygon > 0 and parquet_path:
+                if parquet_path:
+                    print("write to parquet 1")
+                    sub_log.info("write to parquet 1")
+                    file_name = f"meta_{polygon}-{polygon-1000}.parquet"
+                    lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
+                if lmdb_path:
+                    print("write to lmdb 1")
+                    sub_log.info("write to lmdb 1")
+                    current_lmdb = str(Path(lmdb_path) / Path(shapefile_name).stem) + ".lmdb"
+                    lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
+                    lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
+                    id_key_df = id_key_df[0:0]
+                del metadata_list
+                del safetensor_dict
+                gc.collect()
+
+                metadata_list = []
+                safetensor_dict = {}
             polygon += 1
             polygon_progress.update(1)
 
+        if parquet_path:
+            print("write to parquet 2")
+            sub_log.info("write to parquet 2")
+            file_name = f"meta_x-{polygon}.parquet"
+            lmdb_fkt.write_meta_to_parquet(metadata_list, shapefile_meta_folder, file_name)
+            lmdb_fkt.combine_parquet_files(shapefile_meta_folder, output_meta_file)
+
+        if lmdb_path:
+            print("write to lmdb 2")
+            sub_log.info("write to lmdb 2")
+            lmdb_fkt.write_dict_to_lmdb(safetensor_dict, current_lmdb)
+            lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
+        del metadata_list
+        del safetensor_dict
+        del id_key_df
+        gc.collect()
 
 def main(input):
     """Initialize global input variables and loop over files in input directory"""
@@ -658,9 +841,12 @@ def main(input):
     global meta_info_format
     global file_path
     global sub_log
-    global img_width  # new
-    global img_height  # new
-    global merge  # new
+    global img_width
+    global img_height
+    global merge
+
+    global lmdb_path
+    global parquet_path
 
     log_file = str(input['log_file'])
     directory_path = str(input['directory_path'])
@@ -679,17 +865,29 @@ def main(input):
     wms_calc = input['wms_calc']
     state = str(input['state'])
 
+    all_ids_file= input["all_ids_file"]
+    existing_ids_file= input["exisiting_ids_file"]
+
+    # configure logger:
+    subprocess_log_file = os.path.join(directory_path, log_file)
+    sub_log = func.config_logger("info", subprocess_log_file)
+
+
     if AOI in [None, "None", "null", ""]:
         AOI = None
 
     if year in [None, "None", "null", ""]:
         year = None
 
-    output_wms_path = func.create_directory(directory_path, "output_wms")
+    if input['lmdb_path'] is None or str(input['lmdb_path']) == "":
+        lmdb_path = None
+    else:
+        lmdb_path = str(input['lmdb_path'])
 
-    # configure logger:
-    subprocess_log_file = os.path.join(output_wms_path, log_file)
-    sub_log = func.config_logger("info", subprocess_log_file)
+    if input['parquet_path'] is None or str(input['parquet_path']) == "":
+        parquet_path = None
+    else:
+        parquet_path = str(input['parquet_path'])
 
     if state == "BB_history":
         img_format = "image/png"
@@ -698,28 +896,9 @@ def main(input):
         img_format = "image/tiff"
         meta_info_format = "text/plain"
 
-    # Check if dop and meta folders exist and contain .tif files
-    dop_folder_path = os.path.join(output_wms_path, "dop")
-    meta_folder_path = os.path.join(output_wms_path, "meta")
-
-    dop_tif_files = glob.glob(os.path.join(dop_folder_path, '*.tif'))
-    meta_tif_files = glob.glob(os.path.join(meta_folder_path, '*.tif'))
-
-    # Skip WMS download if both folders exist and contain TIFF files
-    if os.path.exists(dop_folder_path) and os.path.exists(meta_folder_path) and dop_tif_files and meta_tif_files:
-        print(f"Both 'dop' and 'meta' folders exist and contain TIFF files. Skipping WMS tile download...")
-    else:
-        print(f"'dop' and/or 'meta' folders are missing or empty. Proceeding with WMS tile download and processing...")
-
-        # Create dop and meta directories if they do not exist
-        if not os.path.exists(dop_folder_path):
-            os.makedirs(dop_folder_path)
-            print(f"'dop' folder created at {dop_folder_path}")
-
-        if not os.path.exists(meta_folder_path):
-            os.makedirs(meta_folder_path)
-            print(f"'meta' folder created at {meta_folder_path}")
-
+    if lmdb_path:
+        output_wms_path = ""
+        print(f"Proceeding with WMS tile download and processing...")
         # process bar for number of files:
         count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
         counter = 1
@@ -732,39 +911,83 @@ def main(input):
                 # Check if it's a file and not a directory (optional, depending on your needs)
                 if os.path.isfile(file_path):
                     print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-                    process_file(file_path, output_wms_path, AOI=AOI, year=year)
+                    process_file(file_path, output_wms_path, all_ids_file=all_ids_file, existing_ids_file=existing_ids_file, AOI=AOI, year=year)
                     print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
-
+                    sub_log.info(f"Execution time for  {filename}: {time.time() - starttime} seconds")
+                    print(f"Execution time for  {filename}: {time.time() - starttime} seconds")
                     counter = counter + 1
 
-        # Move files to the dop and meta folders
-        for file in os.listdir(output_wms_path):
-            # Skip merged files and already processed/moved standalone files
-            if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file:
-                if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
-                    continue  # It's a single standalone file don't move back
-                os.rename(os.path.join(output_wms_path, file), os.path.join(dop_folder_path, file))
+    else:
+        sub_log.debug("in main - else. So lmdb_path is not defined.")
+        output_wms_path = func.create_directory(directory_path, "output_wms")
 
-            elif file.endswith("_meta.tif") and "_merged" not in file:
-                if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
-                    continue  # Same skip for single meta tiles
-                os.rename(os.path.join(output_wms_path, file), os.path.join(meta_folder_path, file))
+        # Check if dop and meta folders exist and contain .tif files
+        dop_folder_path = os.path.join(output_wms_path, "dop")
+        meta_folder_path = os.path.join(output_wms_path, "meta")
 
-        # After moving files to the dop and meta folders
-        print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
-        print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
+        dop_tif_files = glob.glob(os.path.join(dop_folder_path, '*.tif'))
+        meta_tif_files = glob.glob(os.path.join(meta_folder_path, '*.tif'))
 
-    # Clean up temp VRT files
-    for subfolder in ["dop", "meta"]:
-        vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
-        if vrt_path.exists():
-            try:
-                vrt_path.unlink()
-                print(f" Deleted temporary VRT: {vrt_path}")
-            except Exception as e:
-                print(f" Failed to delete {vrt_path}: {e}")
+        # Skip WMS download if both folders exist and contain TIFF files
+        if os.path.exists(dop_folder_path) and os.path.exists(meta_folder_path) and dop_tif_files and meta_tif_files:
+            print(f"Both 'dop' and 'meta' folders exist and contain TIFF files. Skipping WMS tile download...")
         else:
-            print(f"No VRT found in {vrt_path}")
+            print(f"'dop' and/or 'meta' folders are missing or empty. Proceeding with WMS tile download and processing...")
+
+            # Create dop and meta directories if they do not exist
+            if not os.path.exists(dop_folder_path):
+                os.makedirs(dop_folder_path)
+                print(f"'dop' folder created at {dop_folder_path}")
+
+            if not os.path.exists(meta_folder_path):
+                os.makedirs(meta_folder_path)
+                print(f"'meta' folder created at {meta_folder_path}")
+
+            # process bar for number of files:
+            count_files = len(glob.glob(os.path.join(directory_path, '*.shp')))
+            counter = 1
+
+            # Loop through each file in the directory
+            for filename in os.listdir(directory_path):
+                if filename.endswith(".shp"):
+                    # Construct the full file path
+                    file_path = os.path.join(directory_path, filename)
+                    # Check if it's a file and not a directory (optional, depending on your needs)
+                    if os.path.isfile(file_path):
+                        print("Processing file: " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
+                        process_file(file_path, output_wms_path, AOI=AOI, year=year)
+                        print("\nFinished file " + filename + "(file " + str(counter) + "/" + str(count_files) + ")")
+
+                        counter = counter + 1
+
+            # Move files to the dop and meta folders
+            for file in os.listdir(output_wms_path):
+                # Skip merged files and already processed/moved standalone files
+                if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file:
+                    if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+                        continue  # It's a single standalone file don't move back
+                    os.rename(os.path.join(output_wms_path, file), os.path.join(dop_folder_path, file))
+
+                elif file.endswith("_meta.tif") and "_merged" not in file:
+                    if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+                        continue  # Same skip for single meta tiles
+                    os.rename(os.path.join(output_wms_path, file), os.path.join(meta_folder_path, file))
+
+            # After moving files to the dop and meta folders
+            print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
+            print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
+
+        # Clean up temp VRT files
+        for subfolder in ["dop", "meta"]:
+            vrt_path = Path(output_wms_path) / subfolder / "temp_merged.vrt"
+            if vrt_path.exists():
+                try:
+                    vrt_path.unlink()
+                    print(f" Deleted temporary VRT: {vrt_path}")
+                except Exception as e:
+                    print(f" Failed to delete {vrt_path}: {e}")
+            else:
+                print(f"No VRT found in {vrt_path}")
 
     endtime = time.time()
     sub_log.info("Execution time: %s seconds" % (endtime - starttime))

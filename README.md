@@ -1,11 +1,11 @@
-# BfN Naturerbe - Data Acquisition
+# Data Acquisition
 
 Automated download of raster data and acquisition dates from wms servers or geoportals.
 
 ## Description:
 
-This repository contains several python scripts to download the image data as well as the acquisition dates from a specified wms server or geoportal, given one or multiple shape files.
-The different scripts correspond to different wms servers or geoportals between states. Additionally, the acquisition dates of raster images can be written into the attribute table of a shape file.
+This repository contains several python scripts to download the image data as well as the acquisition dates from a specified wms server, geoportal or hard drive, given one or multiple shape files.
+The different scripts correspond to different data distribution platforms or output formats. Additionally, the acquisition dates of raster images can be written into the attribute table of a shape file.
 
 ## Getting Started
 
@@ -24,11 +24,15 @@ The different scripts correspond to different wms servers or geoportals between 
   * cd ../your_name/environment
 * pip install -r requirements.txt
 
-### Executing program
+## WMS download
 
-* Create a directory and place the shape files you want to use for the data acquisition in it.
-* Open the program file you want to work with.
-* To run multiple WMS requests, define each configuration in a YAML file like this:
+* Create a directory and place the shape files you want to use for the data acquisition in it. Make sure that the shape files have an "id" column in the attribute table.
+* To run multiple WMS requests, define each configuration as a new index in a YAML file like the example below.
+* If you want to save the output in TIFF files, remove the lmdb part or fill it with null or empty strings ""
+* If you want to save the output in lmdb format, fill in the paths to the respective folders and files in the lmdb section.
+  * You have to define both "layer" and "layer2" if you are downloading LMDB files, as this option is currently implemented for RGBI images only.
+  * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
+
 <pre> - index: 0  # Explanation row - update index for each new config
 
   ######### General #########
@@ -55,8 +59,15 @@ The different scripts correspond to different wms servers or geoportals between 
   ######### Merging #########
   merge: false   # set to true if tiles should be merged to one big file for each shape file, false otherwise. Attention: Big files if polygons are big or far apart
   AOI: null   # specify area of interest in name of merged meta and image files
-  year: null   # specify a year in name of merged meta and image files </pre>
+  year: null   # specify a year in name of merged meta and image files
   
+  ######### LMDB: #########
+  lmdb_path: PATH # directory in which lmdb for image bands will be created, null otherwise
+  parquet_path: PATH # directory in which parquet with metadata will be created, null otherwise
+  all_ids_file: PATH # parquet file with all lmdb_keys and matching shape-ids of a dataset, null otherwise
+  existing_ids_file: PATH # parquet file with lmdb_keys and matching shape-ids that have already been processed, null otherwise
+ </pre>
+
   * Alternative option:
     * Instead of a YAML file, you can manually configure global parameters in the main() function of wms_saveraster.py, and call the function at the bottom of the script.
   ```
@@ -72,6 +83,34 @@ The different scripts correspond to different wms servers or geoportals between 
 * Write acquisition dates to shape file or extract data from Brandenburg's geoportal:
   * Specify the parameters at the start of the program workflow in "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
   * Run "Acqui_date_to_shape.py" / "Brandenburg_saveraster.py"
+
+
+## Extraction of TIFF from hard drive
+1. Extract data for one specific area and year from a hard drive with historic aerial images of Germany with copy_hist_dops.py. You can modify the example at the bottom of the file to your specific needs. (hist_process_specific_acquisition_year.py basically does the same, it just doesn't search multiple input folders but just one)
+2. Make sure that your shape file contains the columns "id" and "Name".
+3. Process the files in the target folder with merge_historic_tifs.py (Example call at the bottom of the script). Includes merging and reprojecting to a single file of the target coordinate system.
+
+## Extraction of LMDB from hard drive
+Only works for these states:
+* Berlin
+* Brandenburg
+* Hamburg
+* Mecklenburg Vorpommern
+* Sachsen Anhalt
+* Thüringen
+
+as only these states provide publicly available historic aerial imagery.
+* If you want to save the output in lmdb format, follow the example at the bottom of tif_to_lmdb.py
+* Make sure that your shape file contains the columns "id" and "GEN" ("GEN" holds the full state names like "Brandenburg")
+  * If you are missing the all_keys_file, follow the example at the bottom of the create_key_parquet.py script.
+  * If you are missing hist_folder_structure_RGB_epsg.csv and hist_folder_structure_IR_epsg.csv" create them by running folder_structure_to_csv.py
+
+
+## LMDB-entry to TIFF
+To visualize an entry in LMDB format as a TIFF file, follow the example at the bottom of encode_to_lmdb_parquet.py. Make sure to re-comment the code after you finished!!! Otherwise it will be executed each time you run a script that imports encode_to_lmdb_parquet!!!
+
+
+
 
 ## Help / Known Issues
 
