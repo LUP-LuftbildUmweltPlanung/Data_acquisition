@@ -24,7 +24,7 @@ from rasterio.transform import array_bounds, Affine
 from shapely import from_wkb
 from shapely import from_wkt
 import gc
-from memory_profiler import profile
+# from memory_profiler import profile # to analyze memory usage
 from rasterio.warp import transform_bounds
 from rasterio.transform import from_bounds
 

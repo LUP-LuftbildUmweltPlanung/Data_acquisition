@@ -30,8 +30,8 @@ The different scripts correspond to different data distribution platforms or out
 * To run multiple WMS requests, define each configuration as a new index in a YAML file like the example below.
 * If you want to save the output in TIFF files, remove the lmdb part or fill it with null or empty strings ""
 * If you want to save the output in lmdb format, fill in the paths to the respective folders and files in the lmdb section.
-* * Make sure that layer and layer2 are set as this option is only implemented for RGBI images, yet.
-* * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
+  * You have to define both "layer" and "layer2" if you are downloading LMDB files, as this option is currently implemented for RGBI images only.
+  * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
 
 <pre> - index: 0  # Explanation row - update index for each new config
 
@@ -98,11 +98,12 @@ Only works for these states:
 * Mecklenburg Vorpommern
 * Sachsen Anhalt
 * Thüringen
+
 as only these states provide publicly available historic aerial imagery.
 * If you want to save the output in lmdb format, follow the example at the bottom of tif_to_lmdb.py
 * Make sure that your shape file contains the columns "id" and "GEN" ("GEN" holds the full state names like "Brandenburg")
-* * If you are missing the all_ids_file, follow the example at the bottom of the create_key_parquet.py script.
-* * If you are missing hist_folder_structure_RGB_epsg.csv and hist_folder_structure_IR_epsg.csv" create them by running folder_structure_to_csv.py
+  * If you are missing the all_keys_file, follow the example at the bottom of the create_key_parquet.py script.
+  * If you are missing hist_folder_structure_RGB_epsg.csv and hist_folder_structure_IR_epsg.csv" create them by running folder_structure_to_csv.py
 
 
 ## LMDB-entry to TIFF
