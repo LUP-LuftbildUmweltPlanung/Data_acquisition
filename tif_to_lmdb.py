@@ -49,96 +49,6 @@ def read_tif_bands(tif_path):
             band_dict[band_name] = src.read(i)
     return key, band_dict
 
-#@profile
-def open_with_crs_fix(path, default_crs):
-    """
-    Opens a tiff file and checks if crs is set. If yes, it opens and returns the current file.
-    If not, it creates a new, temp file with crs and returns it.
-    """
-    src = rasterio.open(path)
-    formatted_date = read_metadata_and_date(path)
-
-    if src.crs is None:
-
-        with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_file:
-            temp_path = tmp_file.name
-
-        meta = src.meta.copy()
-        meta.update({'crs': default_crs})
-
-        with rasterio.open(temp_path, 'w', **meta) as dst:
-            dst.write(src.read())
-
-        src.close()
-        del src
-        gc.collect()
-        return rasterio.open(temp_path), formatted_date, temp_path
-    else:
-        return src, formatted_date, None
-
-
-def read_metadata_and_date(tif_path):
-    """ Read the date from csv metadata file and process it to unified format YYYYMMDD.
-    """
-
-    filename = str(Path(tif_path).name)
-    pattern = r"\d{3,}_\d{4,}"
-    search_csv_match = re.search(pattern, filename)
-
-    if search_csv_match:
-        extracted_pattern = search_csv_match.group(0)  # Extract the matched pattern
-    else:
-        print("Pattern not found in filename.")
-        return None
-
-    # Extract folder name (e.g. "mv_dop20rgb_EPSG_25833")
-    folder_name = os.path.basename(os.path.dirname(tif_path))
-
-    # Path to meta csv
-    csv_path = os.path.join(os.path.dirname(tif_path), "..", folder_name + ".csv")
-
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"CSV-file {csv_path} not found!")
-
-    pattern_str = rf".*{extracted_pattern}.*"
-
-    # Read csv
-    with open(csv_path, mode='r', newline='', encoding='utf-8') as csvfile:
-        reader = csv.reader(csvfile, delimiter=';')
-
-        for row in reader:
-            filename = row[0]  # First value is name of file
-            date_str = row[1]  # Second value is date
-
-            # Check if filename corresponds to tif name
-            if re.search(pattern_str, filename):
-
-                # If date is 0 check the next column, sometimes date is stored there
-                if date_str == "0" and len(row) > 2:
-                    date_str = row[2]
-
-                # Check date and intercept different formats
-                try:
-                    if len(date_str.split('-')) == 3:
-                        # Format YYYY-MM-DD
-                        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                    elif len(date_str.split('-')) == 2:
-                        # Format YYYY-MM (set day to 01)
-                        date_obj = datetime.strptime(date_str, '%Y-%m')
-                        date_obj = date_obj.replace(day=1)
-                    elif len(date_str.split('.')) == 3:
-                        # Format DD.MM.YYYY
-                        date_obj = datetime.strptime(date_str, '%d.%m.%Y')
-                    else:
-                        #print("Ungültiges Datumsformat! Using year")
-                        formatted_date = None
-
-                    # return format YYYYMMDD
-                    formatted_date = date_obj.strftime('%Y%m%d')
-
-                except Exception as e:
-                    print(f"Error while processing date {date_str}: {e}")
-    return formatted_date
 
 #@profile # To track RAM usage
 def read_tif_bands_clipped(rgb_paths, ir_paths, polygon, input_crs, shapefile_crs, orig_x_min, orig_y_min, year):
@@ -165,7 +75,7 @@ def read_tif_bands_clipped(rgb_paths, ir_paths, polygon, input_crs, shapefile_cr
 
     # reproject and clip rgb data
     for path in rgb_paths:
-        src, date, temp_path = open_with_crs_fix(path, input_crs)
+        src, date, temp_path = func.open_with_crs_fix(path, input_crs)
         temp_array = np.zeros_like(dst_rgb)
         for b in range(1, 3 + 1):
             reproject(
@@ -191,7 +101,7 @@ def read_tif_bands_clipped(rgb_paths, ir_paths, polygon, input_crs, shapefile_cr
 
     # reproject and clip ir data
     for path in ir_paths:
-        src, date, temp_path = open_with_crs_fix(path, input_crs)
+        src, date, temp_path = func.open_with_crs_fix(path, input_crs)
         temp_array = np.zeros_like(dst_ir)
         for b in range(1, 1 + 1):
             reproject(
@@ -308,97 +218,6 @@ def check_public_year_availability(state, key="public"):
 
     return public_availability[state]
 
-def define_hist_foldername(year):
-    """ Defines the folder name given the year. The folder name corresponds to the number of the hard drive that holds data of that year."""
-    if year in list(range(1999,2007))+[1997]:
-        return "01","50"
-    elif year in list(range(2009,2013)):
-        return "65","50"
-    elif year in list(range(2013,2019)):
-        return "66","50"
-    elif year == 2019:
-        return "73","50"
-    elif year in list(range(2020,2024)):
-        return "73","46"
-    else:
-        return None, None
-
-def get_state_and_crs_from_csv(state,year, format="rgb"):
-    """ Reads the epsg code from a csv file that holds the folder structure of the hard drives."""
-
-    state = func.get_state_code(state)
-    if format == "rgb":
-        df_ir = None
-        df_rgb = pd.read_csv(hist_folder_structure_rgb_epsg)
-    elif format == "ir":
-        df_ir = pd.read_csv(hist_folder_structure_ir_epsg)
-        df_rgb = None
-    elif format == "rgbi":
-        df_ir = pd.read_csv(hist_folder_structure_ir_epsg)
-        df_rgb = pd.read_csv(hist_folder_structure_rgb_epsg)
-    else:
-        print("unknown format")
-        return None, state
-
-    epsg_list = {}
-
-    if df_ir is None and format in ["ir", "rgbi"]:
-        return None, None, state
-    elif df_rgb is None and format in ["rgb", "rgbi"]:
-        return None, None, state
-    else:
-        if format in ["rgb", "rgbi"]:
-            # row of the chosen year
-            row = df_rgb[df_rgb["Jahr"] == year]
-
-            if not row.empty:
-                epsg_list["rgb"] = set(ast.literal_eval(row.iloc[0][state]))
-                #print(f"EPSG-Codes for {state.upper()} in {year}: {epsg_list}")
-                if epsg_list["rgb"] == set():
-                    return None, None, state
-            else:
-                #print(f"No entry for year: {year}.")
-                return None, None, state
-        if format in ["ir", "rgbi"]:
-            # row of the chosen year
-            row = df_ir[df_ir["Jahr"] == year]
-
-            if not row.empty:
-                epsg_list["ir"]= set(ast.literal_eval(row.iloc[0][state]))
-                #print(f"EPSG-Codes for {state.upper()} in {year}: {epsg_list}")
-                if epsg_list["ir"] == set():
-                    return None, None, state
-            else:
-                #print(f"No entry for year: {year}.")
-                return None, None, state
-
-    return epsg_list["rgb"], epsg_list["ir"], state
-
-def create_hist_file_list(input_folder, year, state, x_start, x_end, y_start, y_end, epsg_int):
-    """Creates a list of file names of zip files that will be extracted later
-    filenames are defined using x_start and y_start and go to x_start+1 and y_start+1
-    so x_end and y_end should not be in a file name because they go from x_end to x_end+1 which is outside the extent of the shape file"""
-
-    input_folder = func.find_state_folder(input_folder, year, state, epsg_int)
-    file_names = []
-
-    for folder in input_folder:
-
-        patch_lengths = func.check_consistent_number(folder)
-        x_min, x_max, y_min, y_max = func.encode_coordinates(x_start, x_end, y_start, y_end)
-
-        for patch_length in patch_lengths:
-            for x in range(x_min, x_max, patch_length):
-                for y in range(y_min, y_max, patch_length):
-
-                    pattern_str = rf".*{str(x)}_{y}.*\.tif$" # The only common part are the x and y coordinates
-                    pattern = re.compile(pattern_str)
-                    new_file_names = [str(f) for f in Path(folder).iterdir() if f.is_file() and pattern.match(f.name)]
-
-                    file_names += new_file_names
-
-    return file_names
-
 
 def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, existing_ids_file=None):
     """Iterates over polygons in a shapefile and creates one lmdb and parquet file for the whole shapefile."""
@@ -412,8 +231,8 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
     output_meta_file = str(Path(parquet_path) / Path(shapefile_name).stem) + "_meta_merged.parquet"
 
     # Extract non-existing polygons
-    keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
-    keys_to_process_set = set(keys_to_process["id"].values)
+    # keys_to_process = lmdb_fkt.read_existing_ids(all_ids_file, existing_ids_file)
+    # keys_to_process_set = set(keys_to_process["id"].values)
 
     metadata_list = []
     safetensor_dict = {}
@@ -428,9 +247,12 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
 
     for polygon in layer:
 
-        state = polygon.GetField("GEN")
+        state = polygon.GetField("state") #GEN
 
         polygon_id = polygon.GetField("id")
+
+        keys_to_process_set = (1,2,3,4,5,6,7,8)
+        #keys_to_process_set = (6,7,8)
 
         # Only process non-existing polygons
         if polygon_id not in keys_to_process_set:
@@ -438,9 +260,12 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
             polygon_counter += 1
             continue
 
-        available_years = check_public_year_availability(state, key="vali")
-        if len(available_years) == 0:
-            log.info(f"No available data for any year for polygon: {polygon_id}")
+        # available_years = check_public_year_availability(state, key="vali")
+        # if len(available_years) == 0:
+        #     log.info(f"No available data for any year for polygon: {polygon_id}")
+
+        available_years = [polygon.GetField("year")]
+        log.info(available_years)
 
         geom = polygon.GetGeometryRef()
         orig_x_min, _, orig_y_min, _ = geom.GetEnvelope()
@@ -451,12 +276,12 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
         selected_folder = False  # new for each polygon so if one polygon is skipped the data from the earlier ones should still be written
         for year in available_years:  # if there are no years it just finishes
 
-            rgb_crs, ir_crs, short_state = get_state_and_crs_from_csv(state, year, "rgbi")
+            rgb_crs, ir_crs, short_state = func.get_state_and_crs_from_csv(state, year, hist_folder_structure_rgb_epsg, hist_folder_structure_ir_epsg, "rgbi")
 
             if rgb_crs is None or ir_crs is None:  # if all are None we go to next year and continue there
                 continue
 
-            rgb_base_folder, ir_base_folder = define_hist_foldername(year)
+            rgb_base_folder, ir_base_folder = func.define_hist_foldername(year)
 
             rgb_folder = Path(input_dir) / rgb_base_folder / "DOP-Hist" / "RGB"
             ir_folder = Path(input_dir) / ir_base_folder / "DOP-Hist" / "IR"
@@ -467,9 +292,9 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
                                                                                            target_crs)
 
                 # First, create a list of rgb file names and check if they cover the polygon
-                rgb_file_names = create_hist_file_list(rgb_folder, year, short_state, x_min, x_max, y_min, y_max,
+                rgb_file_names = func.create_hist_file_list(rgb_folder, year, short_state, x_min, x_max, y_min, y_max,
                                                        target_crs)
-
+                log.info(rgb_file_names)
                 if rgb_file_names == []:
                     continue
 
@@ -494,10 +319,12 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
 
                 # Check if the polygon is covered completely by the images
                 if coverage.contains(shapely_polygon):
+                    log.info("coverage contains shapely polygon")
+                    return
                     final_ir_files = []
 
                     # If rgb files cover polygon, check if the corresponding ir files exist
-                    ir_file_names = create_hist_file_list(ir_folder, year, short_state, x_min, x_max, y_min, y_max,
+                    ir_file_names = func.create_hist_file_list(ir_folder, year, short_state, x_min, x_max, y_min, y_max,
                                                           target_crs)
                     if ir_file_names == []:
                         del geom_clone
@@ -557,6 +384,11 @@ def process_rgbi_shapefile(shapefile_path, parquet_path, all_ids_file=None, exis
                             del coverage
                             gc.collect()
 
+                else:
+                    log.info("coverage does not contain shapely polygon")
+
+                return
+
                 del geom_clone
                 del coverage
                 gc.collect()
@@ -613,7 +445,7 @@ random.seed(42)
 
 
 ##### Example:
-#
+
 # hist_folder_structure_rgb_epsg = r"PATH\hist_folder_structure_RGB_epsg.csv" # path to csv with folder structure of RGB tifs
 # hist_folder_structure_ir_epsg = r"PATH\hist_folder_structure_IR_epsg.csv" # path to csv with folder structure of IR tifs
 #
@@ -626,6 +458,27 @@ random.seed(42)
 # lmdb_path = "PATH" # Path to output lmdb directory
 # parquet_path = "PATH" # Path to output parquet metadata directory
 # shapes = ["PATH_TO_SHAPE_1", "PATH_TO_SHAPE_2"]
+#
+# existing_ids_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files with ids that have already been processed
+# all_keys_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files that store a matching set of shape ids and lmdb keys
+#
+# for i in range(len(shapes)):
+#     print(shapes[i])
+#     print(os.path.exists(shapes[i]))
+#     process_rgbi_shapefile(shapes[i], parquet_path, all_ids_file=all_keys_files[i], existing_ids_file=existing_ids_files[i])
+
+# hist_folder_structure_rgb_epsg = r"D:\vera\Git_reps\hist_folder_structure_RGB_epsg.csv" # path to csv with folder structure of RGB tifs
+# hist_folder_structure_ir_epsg = r"D:\vera\Git_reps\hist_folder_structure_IR_epsg.csv" # path to csv with folder structure of IR tifs
+#
+# log_file = r"tif_to_lmdb_log.txt"
+# log = func.config_logger("info", log_file)
+#
+# input_dir = r"F:" # path to harddrive, sth like C:
+#
+#
+# lmdb_path = "PATH" # Path to output lmdb directory
+# parquet_path = "PATH" # Path to output parquet metadata directory
+# shapes = [r"D:\vera\Git_reps\test_script\test_automatic_crs32.shp"]
 #
 # existing_ids_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files with ids that have already been processed
 # all_keys_files = ["PATH_TO_PARQUET_1", "PATH_TO_PARQUET_2"] # Paths to parquet files that store a matching set of shape ids and lmdb keys

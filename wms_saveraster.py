@@ -54,100 +54,6 @@ def write_meta_raster(x_min, y_min, x_max, y_max, bildflug_array, out_meta, epsg
     # Save and close the dataset
     dataset = None
 
-def get_max_image_size():
-    """Return the MaxWidth and MaxHeight of the GetCapabilities XML"""
-
-    capabilities_data = requests.get(wms_ad).text
-    if capabilities_data.count("MaxWidth") >= 1:
-        maxwidth = capabilities_data.split("MaxWidth>")[1].split("</")[0]
-    else:
-        sub_log.info("The MaxWidth is not defined. Using 2000 as default.")
-        maxwidth = 2000
-    if capabilities_data.count("MaxHeight") >= 1:
-        maxheight = capabilities_data.split("MaxHeight>")[1].split("</")[0]
-    else:
-        sub_log.info("The MaxHeight is not defined. Using 2000 as default.")
-        maxheight = 2000
-
-    return int(maxwidth),int(maxheight)
-
-def calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width=None, img_height=None, maxwidth=None, maxheight=None):
-    """Calculate the p-factor: into how many pieces the given extent has to be partitioned for calculation based on the desired image size."""
-    # Calculate the extent in x and y directions
-    x_extend = (x_max - x_min) / r_aufl
-    y_extend = (y_max - y_min) / r_aufl
-
-    # Use image size if provided, otherwise use max tile size
-    if img_width is not None and img_height is not None:
-        x_p_factor = math.ceil(x_extend / img_width)
-        y_p_factor = math.ceil(y_extend / img_height)
-    else:
-        x_p_factor = math.ceil(x_extend / maxwidth) if maxwidth else 1
-        y_p_factor = math.ceil(y_extend / maxheight) if maxheight else 1
-
-    # Return the maximum of the two partition factors
-    return max(x_p_factor, y_p_factor)
-
-
-def merge_raster_bands(rgb, ir, output_file_path):
-    """Gets an input of 2 wms image downloads and merges the first band of img2 to img1, if img1 has 3 bands.
-    The output is written into a tif-file."""
-
-    rgb_path = 'temp_img1.tif'
-    ir_path = 'temp_img2.tif'
-
-    with open(rgb_path, 'wb') as f:
-        f.write(rgb.read())
-    with open(ir_path, 'wb') as f:
-        f.write(ir.read())
-
-
-    # Open the RGB image
-    try:
-        rgb_ds = gdal.Open(rgb_path, gdal.GA_ReadOnly)
-    except:
-        sub_log.error("Failed to open the RGB image file of %s." % output_file_path)
-        return
-
-    # Open the IR or CIR image
-    try:
-        ir_ds = gdal.Open(ir_path, gdal.GA_ReadOnly)
-    except:
-        sub_log.error("Failed to open the IR/CIR image file of %s." % output_file_path)
-        return
-
-    # Check the number of bands in the RGB image (expecting 3 bands)
-    if rgb_ds.RasterCount < 3:
-        sub_log.error("The RGB image has less than 3 bands %s." % output_file_path)
-        return
-
-    # Create the output dataset with 4 bands (RGB + 1 IR band)
-    driver = gdal.GetDriverByName('GTiff')
-    output_ds = driver.Create(output_file_path, rgb_ds.RasterXSize, rgb_ds.RasterYSize, 4, gdal.GDT_Byte)
-    if output_ds is None:
-        sub_log.error("Failed to create the output file %s." % output_file_path)
-        return
-
-    # Set geo-transform and projection from the RGB image
-    output_ds.SetGeoTransform(rgb_ds.GetGeoTransform())
-    output_ds.SetProjection(rgb_ds.GetProjection())
-
-    # Copy RGB bands from the RGB image to the output
-    for i in range(1, 5):
-        if i < 4:
-            band_data = rgb_ds.GetRasterBand(i).ReadAsArray()
-        else:
-            band_data = ir_ds.GetRasterBand(1).ReadAsArray()
-        output_ds.GetRasterBand(i).WriteArray(band_data)
-
-    sub_log.debug(f"Output dataset size: {output_ds.RasterXSize} x {output_ds.RasterYSize} x {output_ds.RasterCount}")
-
-    output_ds = None
-    rgb_ds = None
-    ir_ds = None
-
-    os.remove(rgb_path)
-    os.remove(ir_path)
 
 def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_path, acquisition_date=None):
     """Get image data for a specified frame and write it into tif file"""
@@ -239,7 +145,7 @@ def extract_raster_data(wms, epsg_code, x_min, y_min, x_max, y_max, output_file_
                     extract_meta["lmdb_key"], new_safetensor_dict = lmdb_fkt.merge_raster_to_safetensor(img, [extract_meta["bounds_left"],extract_meta["bounds_bottom"]], ir=img2, acquisition_date=acquisition_date)
                 else:
                     sub_log.debug("else")
-                    merge_raster_bands(img, img2, output_file_path)
+                    func.merge_raster_bands(img, img2, output_file_path, sub_log)
             except Exception as e:
                 sub_log.error("can't run merge_raster_bands: %s" % e)
             sub_log.debug("after merge_raster_bands")
@@ -315,68 +221,6 @@ def get_nodata_from_raster(raster_path):
         return nodata
     return None
 
-def merge_files(input_dir, output_file_name, output_wms_path, file_type=None, AOI=None, year=None):
-    """
-    Merge all TIFF files in the directory into a single output using GDAL VRT + Translate.
-
-    Args:
-        input_dir (str): Folder containing tiles.
-        output_file_name (str): Base output name.
-        output_wms_path (str): Destination folder for the final merged output.
-        file_type (str): 'meta' or 'dop', added to the filename suffix.
-        AOI (str): Optional Area of Interest for filename.
-        year (str): Optional year for filename.
-    """
-    print("Starting merge...")
-
-    # File pattern based on shapefile name and type
-    if file_type == "meta":
-        pattern = f"{output_file_name}_*_meta.tif"
-    else:
-        pattern = f"{output_file_name}_*.tif"
-
-    input_files = glob.glob(os.path.join(input_dir, pattern))
-
-    # Filter out overviews and accidentally merged files
-    input_files = [f for f in input_files if not f.endswith(".ovr") and "_merged" not in f]
-
-
-    if not input_files:
-        raise FileNotFoundError(f"No TIFFs found in {input_dir} for type '{file_type}'")
-
-    input_files = func.sort_files_by_spatial_proximity(input_files)
-    print(f" Total input files: {len(input_files)}")
-
-    # Construct suffix for output file
-    suffix_parts = [str(year) if year else None, str(AOI) if AOI else None, str(file_type) if file_type else None]
-    suffix = "_".join(filter(None, suffix_parts))
-    final_output_file = os.path.join(output_wms_path, f"{output_file_name}_{suffix}_merged.tif")
-
-    # Get nodata value from the first tile
-    nodata_value = get_nodata_from_raster(input_files[0])
-
-    # Build VRT
-    vrt_file = os.path.join(input_dir, "temp_merged.vrt")
-    vrt_options = gdal.BuildVRTOptions(separate=False)
-    vrt = gdal.BuildVRT(vrt_file, input_files, options=vrt_options)
-    if vrt is None:
-        raise RuntimeError("Failed to create VRT for merging.")
-
-    # Prepare translate options with compression + BigTIFF
-    compress_options = [
-        "COMPRESS=DEFLATE",
-        "TILED=YES",
-        "BIGTIFF=YES"
-    ]
-    translate_options = gdal.TranslateOptions(
-        format="GTiff",
-        creationOptions=compress_options,
-        noData=nodata_value
-    )
-
-    # Translate to final output
-    gdal.Translate(final_output_file, vrt, options=translate_options)
-    print(f" Merged output saved at {final_output_file}")
 
 def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg_code, epsg_code_int, x_min, y_min, x_max, y_max, calc_type, acquisition_date=None):
     """Call several functions to get raster data for dop and meta files"""
@@ -465,8 +309,8 @@ def polygon_processing(wms, wms_meta, geom, output_wms_path, output_file_name, e
     new_metadata = {}
     new_safetensor_dict = {}
 
-    maxwidth, maxheight = get_max_image_size()
-    reduce_p_factor = calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
+    maxwidth, maxheight = func.get_max_image_size(sub_log, wms_ad)
+    reduce_p_factor = func.calculate_p_factor(x_min, y_min, x_max, y_max, r_aufl, img_width, img_height, maxwidth, maxheight)
     sub_log.debug(f"reduce_p_factor: {reduce_p_factor}")
 
     if reduce_p_factor > 1 and lmdb_path is None:
@@ -656,14 +500,14 @@ def process_file(shapefile_path, output_wms_path, all_ids_file=None, existing_id
 
             try:
                 print(f"Merging DOP for shapefile: {base_filename}")
-                merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
+                func.merge_files(dop_folder_path, base_filename, output_wms_path, file_type="dop", AOI=None, year=None)
                 print(" DOP merge done.")
             except Exception as e:
                 print(f" Failed to merge DOP for {base_filename}: {e}")
 
             try:
                 print(f" Merging META for shapefile: {base_filename}")
-                merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
+                func.merge_files(meta_folder_path, base_filename, output_wms_path, file_type="meta", AOI=None, year=None)
                 print(" META merge done.")
             except Exception as e:
                 print(f" Failed to merge META for {base_filename}: {e}")

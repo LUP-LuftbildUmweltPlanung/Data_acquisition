@@ -1,0 +1,301 @@
+import os
+import rasterio
+from osgeo import ogr
+from pathlib import Path
+from shapely.geometry import box
+import numpy as np
+from rasterio.warp import reproject, Resampling
+import rasterio.transform
+import pyproj
+from rasterio.coords import BoundingBox
+from rasterio.transform import array_bounds, Affine
+from shapely import from_wkb
+import gc
+import glob
+import time
+
+import encode_to_lmdb_parquet as lmdb_fkt
+import download_by_shape_functions as func
+import automatic_wms2 as wms_processing
+import automatic_historic as harddrive_processing
+
+
+
+
+########################## mosaic and reproject ##########################
+
+
+
+########################### extract ##########################
+#
+# def get_acquisition_date(input_dict, retry_delays=[60, 600, 1800, 3600]):
+#     """ Get acquisition date from the feature info
+#         Given Variables:    wms_meta
+#                             r_aufl - resolution of image
+#                             layer_meta - name of layer
+#                             epsg_code - sth like 'EPSG:25833'
+#                             extent - x_min, x_max, y_min, y_max
+#                             format - 'image/png' or 'image/tiff'
+#                             info_format - 'text/html' or 'text/plain'
+#                             acq_date_find_str - str that is searched for in the feature info to identify the location of the acquisition date
+#     """
+#     centroid_x = int((input_dict['x_max'] - input_dict['x_min']) / 2)
+#     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
+#
+#     # Perform the GetFeatureInfo request
+#
+#     success = False
+#     for attempt, delay in enumerate(retry_delays):
+#         try:
+#             info = input_dict['wms_meta'].getfeatureinfo(
+#                 layers=[input_dict['layer_meta']],
+#                 srs=input_dict['epsg_code'],
+#                 bbox=(input_dict['x_min'], input_dict['y_min'], input_dict['x_max'], input_dict['y_max']),
+#                 size=(int(round(input_dict['x_max'] - input_dict['x_min']) / input_dict['r_aufl']),
+#                       int(round(input_dict['y_max'] - input_dict['y_min']) / input_dict['r_aufl'])),
+#                 format=input_dict['format'],
+#                 query_layers=[input_dict['layer_meta']],
+#                 xy=(centroid_x, centroid_y),
+#                 info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
+#             )
+#             success = True
+#             break  # Wenn erfolgreich, verlasse die Schleife
+#         except Exception as e:
+#             print(f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {[input_dict['layer_meta']]} – Warte {delay // 60} Minuten. Fehler: {e}")
+#             time.sleep(delay)
+#     if not success:
+#         print("Layer 2: Can't get acquisitin date for layer %s from : %s" % ([input_dict['layer_meta']], input_dict['wms_meta']))
+#         return 0
+#
+#
+#     info_output = info.read()
+#
+#     bildflug_date = func.extract_and_format_date(info_output)
+#
+#     return bildflug_date
+
+
+def check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id, delays=[0]):
+    """
+    Checks if the required year is available in the wms server !!!for the shapefile's CRS, NOT the target CRS!!!
+    """
+
+    geom = polygon.GetGeometryRef()
+    x_min, x_max, y_min, y_max = geom.GetEnvelope()
+
+    try:
+        bildflug_date = func.get_acquisition_date(input_dict={'wms_meta': wms_meta,
+                                                              'r_aufl': config["r_aufl"],
+                                                              'layer_meta': config["layer_meta"],
+                                                              'epsg_code': epsg_code,
+                                                              'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
+                                                              'y_max': y_max,
+                                                              'format': config["img_format"],
+                                                              'info_format': config["meta_info_format"]
+                                                              },
+                                                  retry_delays=delays)
+        log.debug(f"acquisition date for polygon {polygon_id} is: {bildflug_date}")
+
+        return True, str(bildflug_date)
+    except:
+        log.info(f"Cannot get acquisition date for polygon: {polygon_id}")
+        return False, None
+
+
+
+
+def process_rgbi_shapefile(config, log, shapefile_path):
+    """Iterates over polygons in a shapefile and creates one lmdb and parquet file for the whole shapefile."""
+
+    driver = ogr.GetDriverByName('ESRI Shapefile')
+    dataSource = driver.Open(shapefile_path, 0)  # 0 means read-only.
+    layer = dataSource.GetLayer()
+
+    _, shapefile_name = os.path.split(shapefile_path)
+
+    # # Extract non-existing polygons
+    # keys_to_process = lmdb_fkt.read_existing_ids(config["all_ids_file"], config["existing_ids_file"])
+    # keys_to_process_set = set(keys_to_process["id"].values)
+    #
+    # id_key_df = pd.DataFrame(columns=["id", "prefix"])
+
+    sourceEPSG = layer.GetSpatialRef()
+    epsg_code = "EPSG:" + sourceEPSG.GetAuthorityCode(None)
+    source_epsg_int = int(sourceEPSG.GetAuthorityCode(None))
+    source_epsg_int_hist = int(sourceEPSG.GetAttrValue("AUTHORITY", 1))
+
+    log.debug(f"shapefile CRS: {source_epsg_int}")
+
+    wms, wms_meta = None, None
+    wms_version_used, wms_meta_version_used = None, None
+
+    if config["wms_calc"]:
+        wms, wms_version_used = func.try_connect_wms(log, config["wms_ad"], ['1.3.0', '1.1.1'])
+        if wms is None:
+            log.error(f"Failed to connect to dop WMS: {config['wms_ad']}")
+
+
+    wms_meta, wms_meta_version_used = func.try_connect_wms(log, config["wms_ad_meta"], ['1.3.0', '1.1.1'])
+    if wms_meta is None:
+        log.error(f"Failed to connect to meta WMS: {config['wms_ad_meta']}")
+
+    if wms_version_used:
+        print(f" Data will download using WMS version: {wms_version_used}")
+    if wms_meta_version_used:
+        print(f" Meta data will download using WMS version: {wms_meta_version_used}")
+
+    for polygon in layer:
+
+        state = polygon.GetField("name") # or state
+        state = state.replace(", Land", "")
+        state = state.replace("-", " ")
+
+        polygon_id = polygon.GetField("ID") # or name?
+
+        area = polygon.GetField("Gebiet")
+
+        # # Only process non-existing polygons
+        # if polygon_id not in keys_to_process_set:
+        #     print("skipping ", polygon_id)
+        #     continue
+        try:
+            year = polygon.GetField("year")
+        except:
+            print(f"No year specified for {polygon_id}, continuing with next polygon.")
+            continue
+        log.info(f"year: {year}, polygon: {polygon_id}, state: {state}, sourceEPSG: {source_epsg_int}")
+
+        # polygon_file_name = shapefile_name + "_" + str(polygon_id) + "_" + str(year)
+
+        wms_availability, acquisition_date_full = check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id)
+
+
+
+        if wms_availability and str(year) != acquisition_date_full[:4]:
+            log.info(f"WMS-availability {acquisition_date_full} does not match the required year {year}. Hoping for more luck at historic availability")
+            wms_availability = False
+
+        if wms_availability:
+            # config, log, polygon, out_shape, output_file_name, epsg_code, img_format
+            # wms_processing.process_wms(config,
+            #                            log,
+            #                            polygon,
+            #                            polygon_file_name,
+            #                            epsg_code) #ToDo - current!
+
+            seen_tiles = set()  # reset per polygon
+
+            # print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+            geom = polygon.GetGeometryRef()
+            extent = geom.GetEnvelope()
+
+            if config["state"] == "BB_history":
+                years = "hist-" + config["layer_meta"].split("_")[1].split("-", 1)[1]
+                output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}_{years}"
+            else:
+                output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}"
+
+            dop_folder_path, meta_folder_path = wms_processing.polygon_processing(config,
+                                                                                  log,
+                                                                                  shapefile_path,
+                                                                                  wms,
+                                                                                  wms_meta,
+                                                                                  geom,
+                                                                                  config["out_dir"],
+                                                                                  output_file_name_n,
+                                                                                  epsg_code,
+                                                                                  source_epsg_int,
+                                                                                  extent[0], extent[2], extent[1], extent[3],
+                                                                                  seen_tiles)
+
+            log.info(f"Downloaded polygon {polygon_id} from WMS, continuing with next polygon.")
+
+            # Move files to the dop and meta folders
+            # for file in os.listdir(config["out_dir"]):
+            #     # Skip merged files and already processed/moved standalone files
+            #     if file.endswith(".tif") and "_meta" not in file and "_merged.tif" not in file and dop_folder_path:
+            #         if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+            #             continue  # It's a single standalone file don't move back
+            #         os.rename(os.path.join(config["out_dir"], file), os.path.join(dop_folder_path, file))
+            #
+            #     elif file.endswith("_meta.tif") and "_merged" not in file and meta_folder_path:
+            #         if not any(segment.isdigit() for segment in os.path.splitext(file)[0].split("_")):
+            #             continue  # Same skip for single meta tiles
+            #         os.rename(os.path.join(config["out_dir"], file), os.path.join(meta_folder_path, file))
+
+            # # After moving files to the dop and meta folders
+            # print("Files in DOP folder after moving:", os.listdir(dop_folder_path))
+            # print("Files in Meta folder after moving:", os.listdir(meta_folder_path))
+
+            # Clean up temp VRT files
+            for subfolder in ["dop", "meta"]:
+                vrt_path = Path(config["out_dir"]) / subfolder / "temp_merged.vrt"
+                if vrt_path.exists():
+                    try:
+                        vrt_path.unlink()
+                        print(f" Deleted temporary VRT: {vrt_path}")
+                    except Exception as e:
+                        print(f" Failed to delete {vrt_path}: {e}")
+                else:
+                    print(f"No VRT found in {vrt_path}")
+
+            continue
+
+
+
+        rgb_crs, ir_crs, short_state = func.get_state_and_crs_from_csv(state,
+                                                                          year,
+                                                                          config["folder_structure_rgb_csv"],
+                                                                          config["folder_structure_ir_csv"],
+                                                                          "rgbi"
+                                                                          )
+        log.debug(f"rgb_crs for year: {rgb_crs}")
+        log.debug(f"ir_crs for year: {ir_crs}")
+        if rgb_crs is None or ir_crs is None:  # if all are None we go to next polygon and continue
+            log.info(f"No available historic data for year {year} for polygon: {polygon_id}")
+            continue
+
+
+        key = harddrive_processing.process_historic(config,
+                                                  log,
+                                                  polygon,
+                                                  polygon_id,
+                                                  area,
+                                                  year,
+                                                  source_epsg_int_hist,
+                                                  shapefile_name,
+                                                  short_state,
+                                                  rgb_crs)
+
+        # feature_prefix = f"{key.split('_')[0]}_{key.split('_')[1]}"
+        # id_key_df = pd.concat(
+        #     [id_key_df, pd.DataFrame({"id": [polygon_id], "prefix": [feature_prefix]})],
+        #     ignore_index=True)
+        # lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
+        log.debug(f"Moving on to key {polygon_id}")
+        # id_key_df = id_key_df[0:0]
+
+
+
+############################ wms or local? #####################################
+
+
+
+def main(config):
+
+    log = func.config_logger("info", config["log_file"])
+
+    config["harddrive_root"] = Path(config["harddrive_root"]) # path to harddrive, sth like C:
+    #config["out_dir"] = Path(config["directory_path"]) / "output_wms"  # directory for output tif files
+
+    config["out_dir"] = Path(func.create_directory(config["directory_path"], "output_wms"))
+
+    config["img_format"] = "image/tiff"
+    config["meta_info_format"] = "text/plain"
+
+    shapes = glob.glob(os.path.join(config["directory_path"], '*.shp'))
+
+    for i in range(len(shapes)):
+        #print(shapes[i])
+        print(os.path.exists(shapes[i]))
+        process_rgbi_shapefile(config, log, shapes[i])
