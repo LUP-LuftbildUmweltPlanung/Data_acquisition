@@ -21,60 +21,6 @@ import automatic_historic as harddrive_processing
 
 
 
-
-########################## mosaic and reproject ##########################
-
-
-
-########################### extract ##########################
-#
-# def get_acquisition_date(input_dict, retry_delays=[60, 600, 1800, 3600]):
-#     """ Get acquisition date from the feature info
-#         Given Variables:    wms_meta
-#                             r_aufl - resolution of image
-#                             layer_meta - name of layer
-#                             epsg_code - sth like 'EPSG:25833'
-#                             extent - x_min, x_max, y_min, y_max
-#                             format - 'image/png' or 'image/tiff'
-#                             info_format - 'text/html' or 'text/plain'
-#                             acq_date_find_str - str that is searched for in the feature info to identify the location of the acquisition date
-#     """
-#     centroid_x = int((input_dict['x_max'] - input_dict['x_min']) / 2)
-#     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
-#
-#     # Perform the GetFeatureInfo request
-#
-#     success = False
-#     for attempt, delay in enumerate(retry_delays):
-#         try:
-#             info = input_dict['wms_meta'].getfeatureinfo(
-#                 layers=[input_dict['layer_meta']],
-#                 srs=input_dict['epsg_code'],
-#                 bbox=(input_dict['x_min'], input_dict['y_min'], input_dict['x_max'], input_dict['y_max']),
-#                 size=(int(round(input_dict['x_max'] - input_dict['x_min']) / input_dict['r_aufl']),
-#                       int(round(input_dict['y_max'] - input_dict['y_min']) / input_dict['r_aufl'])),
-#                 format=input_dict['format'],
-#                 query_layers=[input_dict['layer_meta']],
-#                 xy=(centroid_x, centroid_y),
-#                 info_format=input_dict['info_format']  # Change this to 'application/json' if supported and preferred
-#             )
-#             success = True
-#             break  # Wenn erfolgreich, verlasse die Schleife
-#         except Exception as e:
-#             print(f"Versuch {attempt + 1}: Fehler beim Abrufen der Karte für Layer {[input_dict['layer_meta']]} – Warte {delay // 60} Minuten. Fehler: {e}")
-#             time.sleep(delay)
-#     if not success:
-#         print("Layer 2: Can't get acquisitin date for layer %s from : %s" % ([input_dict['layer_meta']], input_dict['wms_meta']))
-#         return 0
-#
-#
-#     info_output = info.read()
-#
-#     bildflug_date = func.extract_and_format_date(info_output)
-#
-#     return bildflug_date
-
-
 def check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id, delays=[0]):
     """
     Checks if the required year is available in the wms server !!!for the shapefile's CRS, NOT the target CRS!!!
@@ -152,6 +98,12 @@ def process_rgbi_shapefile(config, log, shapefile_path):
 
         polygon_id = polygon.GetField("ID") # or name?
 
+
+        # if polygon_id not in [620, 564, 562, 513, 452, 383, 373, 332, 297, 242, 144, 120, 112, 85, 83, 55, 52, 40, 32, 6]: #todo
+        #     log.info(f"Skipping polygon {polygon_id} as it has already been processed in previous runs.")
+        #     continue
+
+
         area = polygon.GetField("Gebiet")
 
         # # Only process non-existing polygons
@@ -170,19 +122,11 @@ def process_rgbi_shapefile(config, log, shapefile_path):
         wms_availability, acquisition_date_full = check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id)
 
 
-
         if wms_availability and str(year) != acquisition_date_full[:4]:
             log.info(f"WMS-availability {acquisition_date_full} does not match the required year {year}. Hoping for more luck at historic availability")
             wms_availability = False
 
         if wms_availability:
-            # config, log, polygon, out_shape, output_file_name, epsg_code, img_format
-            # wms_processing.process_wms(config,
-            #                            log,
-            #                            polygon,
-            #                            polygon_file_name,
-            #                            epsg_code) #ToDo - current!
-
             seen_tiles = set()  # reset per polygon
 
             # print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
@@ -272,7 +216,7 @@ def process_rgbi_shapefile(config, log, shapefile_path):
         #     [id_key_df, pd.DataFrame({"id": [polygon_id], "prefix": [feature_prefix]})],
         #     ignore_index=True)
         # lmdb_fkt.update_existing_ids(id_key_df, existing_ids_file)
-        log.debug(f"Moving on to key {polygon_id}")
+        log.debug(f"Moving on after key {polygon_id}")
         # id_key_df = id_key_df[0:0]
 
 
@@ -286,7 +230,6 @@ def main(config):
     log = func.config_logger("info", config["log_file"])
 
     config["harddrive_root"] = Path(config["harddrive_root"]) # path to harddrive, sth like C:
-    #config["out_dir"] = Path(config["directory_path"]) / "output_wms"  # directory for output tif files
 
     config["out_dir"] = Path(func.create_directory(config["directory_path"], "output_wms"))
 
@@ -296,6 +239,5 @@ def main(config):
     shapes = glob.glob(os.path.join(config["directory_path"], '*.shp'))
 
     for i in range(len(shapes)):
-        #print(shapes[i])
         print(os.path.exists(shapes[i]))
         process_rgbi_shapefile(config, log, shapes[i])

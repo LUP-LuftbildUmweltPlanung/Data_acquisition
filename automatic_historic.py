@@ -185,6 +185,9 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
         x_min, x_max, y_min, y_max, geom_clone = func.transform_to_target_crs(geom, source_epsg_int,
                                                                               curr_crs)
 
+        log.debug(f"{str(x_min)}, {str(x_max)}, {str(y_min)}, {str(y_max)}")
+        log.debug(rgb_folder)
+
         # First, create a list of rgb file names and check if they cover the polygon
         rgb_file_names = func.create_hist_file_list(rgb_folder, year, short_state, x_min, x_max, y_min, y_max,
                                                     curr_crs)

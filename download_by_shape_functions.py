@@ -170,11 +170,19 @@ def config_logger(level, filename):
 def transform_to_target_crs(geom, source_epsg_int, target_epsg_int):
     """ Transform the geom of the given shape file to the target EPSG of the output files"""
     # Define the target spatial reference (EPSG:25833)
+
+    # extent = geom.GetEnvelope()
+    # print(geom.GetSpatialReference())
+    # print(f"{str(extent[0])}, {str(extent[1])}, {str(extent[2])}, {str(extent[3])}") # bei 3035: y_min, y_max, x_min, x_max!!!
+    # print(target_epsg_int)
+
     targetSRS = osr.SpatialReference()
     targetSRS.ImportFromEPSG(target_epsg_int)
+    targetSRS.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
 
     sourceSRS = osr.SpatialReference()
     sourceSRS.ImportFromEPSG(source_epsg_int)
+    sourceSRS.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
 
     geom_clone = geom.Clone()
 
@@ -209,7 +217,7 @@ def get_state_code(state):
                    "Rheinland Pfalz": "rp",
                    "Schleswig-Holstein":"sh",
                    "Schleswig Holstein": "sh",
-                   #"Saarland":"sn", # no publicly available data
+                   "Saarland":"sl", # no publicly available data
                    "Sachsen":"sn",
                    "Sachsen-Anhalt":"st",
                    "Sachsen Anhalt":"st",
