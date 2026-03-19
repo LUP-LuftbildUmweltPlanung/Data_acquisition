@@ -255,7 +255,8 @@ def extract_raster_data_process(output_wms_path, output_file_name, wms_var, epsg
         else:
             sub_log.debug("Getting acquisition date for file %s" %out_meta)
             try:
-                bildflug_date = func.get_acquisition_date(input_dict = {  'wms_meta': wms_var,
+                bildflug_date = func.get_acquisition_date(sub_log,
+                                                          input_dict = {  'wms_meta': wms_var,
                                                                       'r_aufl': r_aufl,
                                                                       'layer_meta': layer_meta,
                                                                       'epsg_code': epsg_code,

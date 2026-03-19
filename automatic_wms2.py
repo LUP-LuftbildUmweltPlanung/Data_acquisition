@@ -322,7 +322,8 @@ def extract_raster_data_process(config, sub_log, shapefile_path, output_wms_path
         else:
             sub_log.debug("Getting acquisition date for file %s" % out_meta)
             try:
-                bildflug_date = func.get_acquisition_date(input_dict={'wms_meta': wms_var,
+                bildflug_date = func.get_acquisition_date(sub_log,
+                                                          input_dict={'wms_meta': wms_var,
                                                                       'r_aufl': config["r_aufl"],
                                                                       'layer_meta': config["layer_meta"],
                                                                       'epsg_code': epsg_code,
@@ -330,7 +331,8 @@ def extract_raster_data_process(config, sub_log, shapefile_path, output_wms_path
                                                                       'y_max': y_max,
                                                                       'format': config["img_format"],
                                                                       'info_format': config["meta_info_format"]
-                                                                      })
+                                                                      },
+                                                          months=config["months"])
             except:
                 sub_log.error("Cannot get acquisition date for file %s" % out_meta)
                 bildflug_date == 0
@@ -356,19 +358,6 @@ def extract_raster_data_process(config, sub_log, shapefile_path, output_wms_path
         new_metadata.update({"acquisition": bildflug_date})
 
     return new_metadata, new_safetensor_dict
-
-
-# def try_connect_wms(sub_log, url, versions):
-#     """Attempt to connect to a WMS server using multiple versions and return the successful one."""
-#     for version in versions:
-#         try:
-#             wms_service = WebMapService(url, version=version, timeout=120, parse_remote_metadata=True)
-#             if wms_service.contents:  # Check if layers are available
-#                 print(f"Successfully connected to WMS: {url} using version {version}")
-#                 return wms_service, version
-#         except Exception as e:
-#             sub_log.warning(f"Failed to connect to {url} using version {version}: {e}")
-#     return None, None  # If all attempts fail
 
 
 def polygon_processing(config, sub_log, shapefile_path, wms, wms_meta, geom, output_wms_path, output_file_name, epsg_code, epsg_code_int, x_min, y_min,

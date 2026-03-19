@@ -166,6 +166,9 @@ def process_tiff_file(config, log, rgb_paths, ir_paths, input_crs, shapefile_crs
 
 
 def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_int, shapefile_name, short_state, rgb_crs):
+    """Processing function to extract an aerial image from harddrive for a specific polygon and acquisition year.
+    """
+
     geom = polygon.GetGeometryRef()
     orig_x_min, orig_x_max, orig_y_min, orig_y_max = geom.GetEnvelope()
 
@@ -178,7 +181,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
 
     if os.path.exists(output_path):
         log.info(f"Tiff for polygon {polygon_id} already exists, continuing with next polygon.")
-        return
+        return True
 
     for curr_crs in rgb_crs:  # can't be empty because that was checked earlier
 
@@ -207,17 +210,26 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
         shapely_polygon = from_wkb(bytes(geom_clone.ExportToWkb()))
 
         coverage = None  # Initial no coverage
+        new_rgb_files = []
         for f in rgb_file_names:
             with rasterio.open(f) as src:
                 bounds = src.bounds
                 img_geom = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
                 if coverage is None:
-                    coverage = img_geom
+                    month_check = func.historic_month_check(log, config["months"], f)
+                    if month_check is not None:
+                        coverage = img_geom
+                        new_rgb_files.append(f)
                 else:
-                    coverage = coverage.union(img_geom)
+                    month_check = func.historic_month_check(log, config["months"], f)
+                    if month_check is not None:
+                        coverage = coverage.union(img_geom)
+                        new_rgb_files.append(f)
+
+        rgb_file_names = new_rgb_files
 
         # Check if the polygon is covered completely by the images
-        if coverage.contains(shapely_polygon):
+        if coverage and coverage.contains(shapely_polygon):
             final_ir_files = []
 
             # If rgb files cover polygon, check if the corresponding ir files exist
@@ -283,11 +295,12 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
                 del coverage
                 gc.collect()
 
-                return
+                return True
         else:
             # del geom
             # del geom_clone
             # del coverage
             # gc.collect()
             log.info(f"Polygon {polygon_id} not covered by historic files.")
-            #return
+
+    return False

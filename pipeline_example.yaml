@@ -3,7 +3,13 @@
 
   ######### General: #########
   log_file: "log1.txt"   # log file for the download of this wms request
-  directory_path: "your_directory\\"   # directory with the shape files that will be processed. output_dir = directory_path\\output_wms
+  directory_path: "your_directory"   # directory with the shape files that will be processed. output_dir = directory_path\\output_wms
+  state_col: state # name of column that contains the state names. default: state
+  year_col: year # name of column that contains the year for which to extract data for this area. default: year
+  name_col: name # name of column that contains the names of the areas. default: name
+  id_col: id # name of id column. default: id
+  year_interval: null # set to a year or an interval start-end if you want to extract data from the same interval for all areas. Chooses the most recent year for each area. Default ""
+  months: null
 
   ######### Tile settings: #########
   r_aufl: 0.2   # spatial resolution of extracted tif files in meter (for image and meta)
@@ -15,7 +21,7 @@
   wms_ad: ""    # wms web address for the image
   layer: ""   # name of rgb layer in wms server
   layer2: null    # name of layer with infrared as band 1 in wms server, set to null to skip
-  state: "None"   # set to "BB_history" if the data can only be extracted in png/jpeg format instead of tif (e.g. for the historic Brandenburg wms)
+  state: null   # set to "BB_history" if the data can only be extracted in png/jpeg format instead of tif (e.g. for the historic Brandenburg wms)
 
   ######### Meta extraction: #########
   meta_calc: false   # set to true if you want to extract metadata, false otherwise
@@ -28,8 +34,8 @@
   year: null   # specify a year in name of merged meta and image files
 
   ######### LMDB: #########
-  lmdb_path: "PATH" # directory in which lmdb for image bands will be created
-  parquet_path: "PATH" # directory in which parquet with metadata will be created
-  all_ids_file: "PATH" # parquet file with all lmdb_keys and matching shape-ids of a dataset
-  exisiting_ids_file: "PATH" # # parquet file with lmdb_keys and matching shape-ids that have already been processed
+  lmdb_path: null # directory in which lmdb for image bands will be created
+  parquet_path: null # directory in which parquet with metadata will be created
+  all_ids_file: null # parquet file with all lmdb_keys and matching shape-ids of a dataset
+  existing_ids_file: null # parquet file with lmdb_keys and matching shape-ids that have already been processed
   ######################################################################################################################

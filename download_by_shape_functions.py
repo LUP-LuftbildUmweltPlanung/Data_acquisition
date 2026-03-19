@@ -20,7 +20,8 @@ import ast
 import gc
 import tempfile
 import csv
-from datetime import datetime
+from datetime import datetime, date
+from dateutil import parser
 import pandas as pd
 import math
 import requests
@@ -66,7 +67,7 @@ def sort_date_str(str_date):
 def extract_and_format_date(date_bytes):
     # Decode the bytes object to a string using UTF-8 or appropriate encoding
     date_string = date_bytes.decode('utf-8')
-
+    #print(date_string)
     # Define a regular expression pattern to capture dates with keywords followed by any characters
     # This pattern handles any delimiter and considers dates possibly not ending with a whitespace
     date_pattern = r'((Bildflugdatum|B\nbildflug).*?(\d{4})\D(\d{2})\D(\d{2})(?:)?|(\d{2})\D(\d{2})\D(\d{4})(?:)?)|((\d{4})\D(\d{2})\D(\d{2})(?:)?|(\d{2})\D(\d{2})\D(\d{4})(?:)?)'
@@ -90,7 +91,60 @@ def extract_and_format_date(date_bytes):
     return preferred_date
 
 
-def get_acquisition_date(input_dict, retry_delays=[60, 600, 1800, 3600]):
+def check_months_availability(log, bildflug_date, months):
+    """Checks if the given acquisition date was taken in one of the specified months.
+    Parameters:     bildflug_date (str) - acquisition date in varying formats e.g. YYYYMMDD or YYYY-MM-DD or YYYY
+                    months (list(str))|None  - list of months given as numbers between 1 and 12 like ['1','3','12']
+    returns:    None    - if no match
+                bildflug_date - returns the input date if it matches the months
+    """
+    if len(str(bildflug_date))<5:
+        return None
+    else:
+        # fills up missing values with current date but if length of original encoded date is > 5,
+        # at least the year and month should be set!
+        datetime_date = parser.parse(bildflug_date)
+        if str(datetime_date.month) in months:
+            log.info(f"Date {bildflug_date} fits the requirements for months of acquisition {months}.")
+            return bildflug_date
+        else:
+            log.info(f"Date {bildflug_date} not in given months.")
+            return None
+
+
+def historic_month_check(log, months, file_name):
+    """Retrieves the acquisition date of a specific file in the harddrive for historic data and validates it against a set of months
+    Parameters: months (list(str))|None  - list of months given as numbers between 1 and 12 like ['1','3','12']
+                file_name (str)  - Path to the current tif image
+    returns:    None    - if no match
+                bildflug_date - returns the input date if it matches the months
+                True    - if months is None and no validation is necessary
+    """
+    if months is None: # no need to extract and check the specific date
+        return True
+    file_name = Path(file_name)
+    file_base_name = file_name.stem
+    pattern = r"\d{3}_\d{4}"
+    pattern_found = re.findall(pattern, file_base_name)
+    if len(pattern_found) > 0:
+        file_dir_name = file_name.parent.stem
+        year_dir = file_name.parent.parent
+        csv_path = year_dir / (file_dir_name + ".csv")
+        log.debug(csv_path)
+        try:
+            csv_df = pd.read_csv(csv_path, header=None, delimiter=";")
+            acquisition_date = csv_df.loc[csv_df[0].str.contains(pattern_found[0]), 1].iloc[0]
+        except Exception as e:
+            log.info(f"Exception reading metadata csv file: {str(year_dir/(file_dir_name + '.csv'))}. Attempting to get date differently. Exception: {e}")
+            with open(csv_path, 'r') as f:
+                data = f.read()
+                data_split = data.split(pattern_found[0]) #[1].split(";",2)[1]
+                acquisition_date = data_split[1].split(";",2)[1]
+
+        return check_months_availability(log, acquisition_date, months)
+
+
+def get_acquisition_date(log, input_dict, retry_delays=[60, 600, 1800, 3600], months=None):
     """ Get acquisition date from the feature info
         Given Variables:    wms_meta
                             r_aufl - resolution of image
@@ -105,7 +159,6 @@ def get_acquisition_date(input_dict, retry_delays=[60, 600, 1800, 3600]):
     centroid_y = int((input_dict['y_max'] - input_dict['y_min']) / 2)
 
     # Perform the GetFeatureInfo request
-    #retry_delays = [60, 600, 1800, 3600]
     success = False
     for attempt, delay in enumerate(retry_delays):
         try:
@@ -133,6 +186,9 @@ def get_acquisition_date(input_dict, retry_delays=[60, 600, 1800, 3600]):
     info_output = info.read()
 
     bildflug_date = extract_and_format_date(info_output)
+
+    if months:
+        bildflug_date = check_months_availability(log, bildflug_date, months)
 
     return bildflug_date
 
@@ -484,8 +540,12 @@ def read_metadata_and_date(tif_path):
                 # Check date and intercept different formats
                 try:
                     if len(date_str.split('-')) == 3:
-                        # Format YYYY-MM-DD
-                        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                        if len(date_str.split('-')[0]) == 4:
+                            # Format YYYY-MM-DD
+                            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                        else:
+                            # Format DD-MM-YYYY
+                            date_obj =  datetime.strptime(date_str, '%d-%m-%Y')
                     elif len(date_str.split('-')) == 2:
                         # Format YYYY-MM (set day to 01)
                         date_obj = datetime.strptime(date_str, '%Y-%m')
