@@ -711,7 +711,7 @@ def main(input):
     state = str(input['state'])
 
     all_ids_file= input["all_ids_file"]
-    existing_ids_file= input["exisiting_ids_file"]
+    existing_ids_file= input["existing_ids_file"]
 
     # configure logger:
     subprocess_log_file = os.path.join(directory_path, log_file)

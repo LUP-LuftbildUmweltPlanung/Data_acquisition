@@ -26,8 +26,10 @@ def process_years(year):
     returns either: list - of either one year or all years in the given interval
                     False - if the input format is different
     """
-    if year.isdigit():
+    if type(year) is int:
         return [year]
+    elif year.isdigit():
+        return [int(year)]
     elif year.find("-") != -1:
         interval = year.split("-")
         start = int(interval[0])
@@ -57,11 +59,11 @@ def check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id
                                                               },
                                                   retry_delays=delays,
                                                   months=config["months"])
-        log.debug(f"acquisition date for polygon {polygon_id} is: {bildflug_date}")
+        log.debug(f"WMS acquisition date for polygon {polygon_id} is: {bildflug_date}")
 
         return True, str(bildflug_date)
     except:
-        log.info(f"Cannot get acquisition date for polygon: {polygon_id}")
+        log.debug(f"Cannot get wms acquisition date for polygon: {polygon_id}")
         return False, None
 
 
@@ -147,38 +149,45 @@ def process_rgbi_shapefile(config, log, shapefile_path):
         wms_availability, acquisition_date_full = check_wms_availability(config, log, polygon, wms_meta, epsg_code, polygon_id)
 
         for year in years:
+            log.debug(f"year type: {type(year)}")
             if wms_availability and str(year) != acquisition_date_full[:4]:
-                log.info(f"WMS-availability {acquisition_date_full} does not match the required year {year}. Hoping for more luck at historic availability")
+                log.debug(f"WMS-availability {acquisition_date_full} does not match the required year {year}. Hoping for more luck at historic availability")
                 wms_availability = False
+                acquisition_date_full = None
 
             if wms_availability:
-                seen_tiles = set()  # reset per polygon
-
-                # print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
-                geom = polygon.GetGeometryRef()
-                extent = geom.GetEnvelope()
-
-                if config["state"] == "BB_history":
-                    years = "hist-" + config["layer_meta"].split("_")[1].split("-", 1)[1]
-                    output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}_{years}"
+                if config["only_dates"]:
+                    log.info(
+                        f"Polygon {polygon_id} from WMS has acquisition date {acquisition_date_full}, continuing with next polygon.")
+                    break
                 else:
-                    output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}"
+                    seen_tiles = set()  # reset per polygon
 
-                dop_folder_path, meta_folder_path = wms_processing.polygon_processing(config,
-                                                                                      log,
-                                                                                      shapefile_path,
-                                                                                      wms,
-                                                                                      wms_meta,
-                                                                                      geom,
-                                                                                      config["out_dir"],
-                                                                                      output_file_name_n,
-                                                                                      epsg_code,
-                                                                                      source_epsg_int,
-                                                                                      extent[0], extent[2], extent[1], extent[3],
-                                                                                      seen_tiles)
+                    # print("\nProcessing polygon: " + str(polygon + 1) + "/" + str(len(inLayer)))
+                    geom = polygon.GetGeometryRef()
+                    extent = geom.GetEnvelope()
 
-                log.info(f"Downloaded polygon {polygon_id} from WMS, continuing with next polygon.")
-                break
+                    if config["state"] == "BB_history":
+                        years = "hist-" + config["layer_meta"].split("_")[1].split("-", 1)[1]
+                        output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}_{years}"
+                    else:
+                        output_file_name_n = f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}"
+
+                    dop_folder_path, meta_folder_path = wms_processing.polygon_processing(config,
+                                                                                          log,
+                                                                                          shapefile_path,
+                                                                                          wms,
+                                                                                          wms_meta,
+                                                                                          geom,
+                                                                                          config["out_dir"],
+                                                                                          output_file_name_n,
+                                                                                          epsg_code,
+                                                                                          source_epsg_int,
+                                                                                          extent[0], extent[2], extent[1], extent[3],
+                                                                                          seen_tiles)
+
+                    log.info(f"Downloaded polygon {polygon_id} from WMS with acquisition date {acquisition_date_full}, continuing with next polygon.")
+                    break
 
 
 
@@ -191,7 +200,7 @@ def process_rgbi_shapefile(config, log, shapefile_path):
             log.debug(f"rgb_crs for year: {rgb_crs}")
             log.debug(f"ir_crs for year: {ir_crs}")
             if rgb_crs is None or ir_crs is None:  # if all are None we go to next polygon and continue
-                log.info(f"No available historic data for year {year} for polygon: {polygon_id}")
+                log.debug(f"No available historic data for year {year} for polygon: {polygon_id}")
                 continue
 
 
@@ -259,6 +268,8 @@ def main(config):
     if ("months" not in config.keys()) or ("months" in config.keys() and config["months"] == ""):
         config["months"] = None
 
+    log.debug(f"config['months']: {config['months']}")
+
     if "state_col" not in config.keys():
         config["state_col"] = "state"
     if "year_col" not in config.keys():
@@ -267,7 +278,8 @@ def main(config):
         config["name_col"] = "name"
     if "id_col" not in config.keys():
         config["id_col"] = "id"
-
+    if not ("only_dates" in config.keys() and config["only_dates"] is True):
+        config["only_dates"] = False
 
     config["out_dir"] = Path(func.create_directory(config["directory_path"], "output_wms"))
 

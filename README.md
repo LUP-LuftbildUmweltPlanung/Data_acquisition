@@ -24,6 +24,13 @@ The different scripts correspond to different data distribution platforms or out
   * cd ../your_name/environment
 * pip install -r requirements.txt
 
+## Combined WMS and Harddrive download to tif
+* Create a directory and place the shape files you want to use for the data acquisition in it. Make sure that the shape files have an "id" column in the attribute table.
+* To run multiple WMS requests, define each configuration as a new index in a YAML file
+  * The configuration parameters are listed in the example-YAML file: automatic_example.yaml
+* Specify the path to your YAML file in iterate_automatic.py and run the script
+
+
 ## WMS download
 
 * Create a directory and place the shape files you want to use for the data acquisition in it. Make sure that the shape files have an "id" column in the attribute table.

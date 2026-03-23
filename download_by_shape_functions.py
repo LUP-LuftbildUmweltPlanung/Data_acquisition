@@ -99,16 +99,17 @@ def check_months_availability(log, bildflug_date, months):
                 bildflug_date - returns the input date if it matches the months
     """
     if len(str(bildflug_date))<5:
+        log.debug(f"Date {bildflug_date} does not contain months.")
         return None
     else:
         # fills up missing values with current date but if length of original encoded date is > 5,
         # at least the year and month should be set!
         datetime_date = parser.parse(bildflug_date)
         if str(datetime_date.month) in months:
-            log.info(f"Date {bildflug_date} fits the requirements for months of acquisition {months}.")
+            log.debug(f"Date {bildflug_date} fits the requirements for months of acquisition {months}.")
             return bildflug_date
         else:
-            log.info(f"Date {bildflug_date} not in given months.")
+            log.debug(f"Date {bildflug_date} not in given months.")
             return None
 
 
@@ -120,8 +121,6 @@ def historic_month_check(log, months, file_name):
                 bildflug_date - returns the input date if it matches the months
                 True    - if months is None and no validation is necessary
     """
-    if months is None: # no need to extract and check the specific date
-        return True
     file_name = Path(file_name)
     file_base_name = file_name.stem
     pattern = r"\d{3}_\d{4}"
@@ -134,13 +133,23 @@ def historic_month_check(log, months, file_name):
         try:
             csv_df = pd.read_csv(csv_path, header=None, delimiter=";")
             acquisition_date = csv_df.loc[csv_df[0].str.contains(pattern_found[0]), 1].iloc[0]
+            if len(str(acquisition_date)) < 4:
+                log.debug(f"{acquisition_date} has less than 4 characters. Extracting next column")
+                acquisition_date = csv_df.loc[csv_df[0].str.contains(pattern_found[0]), 2].iloc[0]
+
         except Exception as e:
-            log.info(f"Exception reading metadata csv file: {str(year_dir/(file_dir_name + '.csv'))}. Attempting to get date differently. Exception: {e}")
+            log.debug(f"Exception reading metadata csv file: {str(year_dir/(file_dir_name + '.csv'))}. Attempting to get date differently. Exception: {e}")
             with open(csv_path, 'r') as f:
                 data = f.read()
                 data_split = data.split(pattern_found[0]) #[1].split(";",2)[1]
-                acquisition_date = data_split[1].split(";",2)[1]
-
+                acquisition_date = data_split[1].split(";",3)[1]
+                if len(str(acquisition_date)) < 4:
+                    log.debug(f"{acquisition_date} has less than 4 characters. Extracting next column")
+                    acquisition_date = data_split[1].split(";",3)[2]
+        if months is None: # no need to extract and check the specific date
+            log.debug(f"Current acquisition date {acquisition_date}.")
+            return acquisition_date
+        log.debug(f"Current acquisition date {acquisition_date}.")
         return check_months_availability(log, acquisition_date, months)
 
 
@@ -279,9 +288,18 @@ def get_state_code(state):
                    "Sachsen Anhalt":"st",
                    "Thüringen":"th",
                    "Th0ringen":"th"}
+
+    if len(state) == 2:
+        state = state.lower()
+        if state in state_codes.values():
+            return state
+        else:
+            print(f"State code {state} not implemented")
+            exit()
     if state in state_codes.keys():
         return state_codes[state]
     else:
+        print(f"State code {state} not implemented")
         exit()
 
 def find_state_folder(input_folder, year, state, epsg_int):
@@ -405,7 +423,7 @@ def sort_files_by_spatial_proximity(input_files):
     return [f[0] for f in sorted_files]
 
 
-def get_state_and_crs_from_csv(state,year, hist_folder_structure_rgb_epsg, hist_folder_structure_ir_epsg, format="rgb"):
+def get_state_and_crs_from_csv(state, year, hist_folder_structure_rgb_epsg, hist_folder_structure_ir_epsg, format="rgb"):
     """ Reads the epsg code from a csv file that holds the folder structure of the hard drives."""
 
     state = get_state_code(state)

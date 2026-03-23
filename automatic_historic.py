@@ -40,12 +40,10 @@ def read_tif_bands_clipped(config, log, rgb_paths, ir_paths, input_crs, shapefil
     # destination transform with extents of the polygon to reproject data only to this area
     dst_transform = Affine(config["r_aufl"], 0, orig_x_min,
                            0, -config["r_aufl"], orig_y_max)
-    log.debug("test1")
 
     dst_rgb = np.zeros((3, out_shape[0], out_shape[1]), dtype=np.uint8)
     dst_ir = np.zeros((1, out_shape[0], out_shape[1]), dtype=np.uint8)
     acquisition_date = None
-    log.debug("test2")
 
     # reproject and clip rgb data
     for path in rgb_paths:
@@ -179,7 +177,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
 
     output_path = config["out_dir"] / f"{shapefile_name.split('.')[0]}_{year}_{area}_{polygon_id}.tif"
 
-    if os.path.exists(output_path):
+    if os.path.exists(output_path) and config["only_dates"] is False:
         log.info(f"Tiff for polygon {polygon_id} already exists, continuing with next polygon.")
         return True
 
@@ -198,7 +196,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
         log.debug(rgb_file_names)
 
         if rgb_file_names == []:
-            log.info(f"No available rgb data for year {year} for crs: {curr_crs}")
+            log.debug(f"No available rgb data for year {year} for crs: {curr_crs}")
             continue
 
         for elem in rgb_file_names:
@@ -211,20 +209,25 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
 
         coverage = None  # Initial no coverage
         new_rgb_files = []
+        acquisition_dates = set()
         for f in rgb_file_names:
             with rasterio.open(f) as src:
                 bounds = src.bounds
                 img_geom = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
                 if coverage is None:
                     month_check = func.historic_month_check(log, config["months"], f)
+                    log.debug(f"month-check: {month_check}")
                     if month_check is not None:
                         coverage = img_geom
                         new_rgb_files.append(f)
+                        acquisition_dates.add(month_check)
                 else:
                     month_check = func.historic_month_check(log, config["months"], f)
+                    log.debug(f"month-check: {month_check}")
                     if month_check is not None:
                         coverage = coverage.union(img_geom)
                         new_rgb_files.append(f)
+                        acquisition_dates.add(month_check)
 
         rgb_file_names = new_rgb_files
 
@@ -241,7 +244,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
                 del coverage
                 gc.collect()
 
-                log.info(f"No available ir data for year {year} for crs: {curr_crs}")
+                log.debug(f"No available ir data for year {year} for crs: {curr_crs}")
                 continue
 
             for elem in rgb_file_names:
@@ -257,7 +260,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
                         final_ir_files = [ir_name]
 
                 else:
-                    log.info(f"No available rgb and matching ir data for year {year} for crs: {curr_crs}")
+                    log.debug(f"No available rgb and matching ir data for year {year} for crs: {curr_crs}")
                     break
 
             # If both, rgb and ir files exist, extract the data and safe in safetensor format and meta dict
@@ -268,26 +271,30 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
                 out_shape = (int(math.ceil(orig_y_max - orig_y_min) / config["r_aufl"]), int(math.ceil(orig_x_max - orig_x_min) / config["r_aufl"]))
                 log.debug(out_shape)
 
-                try:
-                    key = process_tiff_file(config,
-                                            log,
-                                            rgb_file_names,
-                                            final_ir_files,
-                                            curr_crs,
-                                            source_epsg_int,
-                                            # x_min,
-                                            # y_min,
-                                            # y_max,
-                                            orig_x_min,
-                                            orig_y_min,
-                                            orig_y_max,
-                                            out_shape,
-                                            year,
-                                            output_path)
-                    log.info(f"Saved historic image for polygon {polygon_id} to tif")
-                except:
-                    log.info(f"Couldn't save polygon: {polygon_id} for crs: {curr_crs}")
-                    continue
+                if config["only_dates"]:
+                    log.info(f"Historic image for polygon {polygon_id} has acquisition dates {list(acquisition_dates)}")
+                else:
+                    try:
+                        key = process_tiff_file(config,
+                                                log,
+                                                rgb_file_names,
+                                                final_ir_files,
+                                                curr_crs,
+                                                source_epsg_int,
+                                                # x_min,
+                                                # y_min,
+                                                # y_max,
+                                                orig_x_min,
+                                                orig_y_min,
+                                                orig_y_max,
+                                                out_shape,
+                                                year,
+                                                output_path)
+                        acquisition_dates_list = list(acquisition_dates)
+                        log.info(f"Saved historic image for polygon {polygon_id} with acquisition dates {acquisition_dates_list} to tif")
+                    except:
+                        log.debug(f"Couldn't save polygon: {polygon_id} for crs: {curr_crs}")
+                        continue
 
 
                 del geom
@@ -301,6 +308,6 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
             # del geom_clone
             # del coverage
             # gc.collect()
-            log.info(f"Polygon {polygon_id} not covered by historic files.")
+            log.debug(f"Polygon {polygon_id} not covered by historic files.")
 
     return False
