@@ -7,9 +7,14 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 import itertools
 
+from welford import Welford
+import rasterio
+from functools import partial
+import os
+import glob
 
 
-def compute_mean_std(lmdb_path):
+def compute_mean_std(log, lmdb_path):
     """
     Calculate the mean and std in the given data (training data!!!)
     :param data: Dataset (for training)
@@ -36,7 +41,7 @@ def compute_mean_std(lmdb_path):
             total_samples += data_dict["4"].size
 
             if counter % 1000 == 0:
-                print(counter, time.time() - start)
+                log.info(counter, time.time() - start)
                 start = time.time()
             counter += 1
 
@@ -54,7 +59,7 @@ def compute_mean_std(lmdb_path):
 
             std += np.sum((curr_dict - mean)**2)
             if counter % 1000 == 0:
-                print(counter, time.time() - start)
+                log.info(counter, time.time() - start)
                 start = time.time()
             counter += 1
 
@@ -71,7 +76,7 @@ def extract_squared_diff(value, mean):
     array = data_dict["4"].astype(np.float32) / 255.0
     return np.sum((array - mean) ** 2)
 
-def compute_mean_std_2pass(lmdb_path, num_workers=16):
+def compute_mean_std_2pass(log, lmdb_path, num_workers=16):
     db = create_or_open_lmdb(lmdb_path)
 
     # === FIRST PASS: Compute mean ===
@@ -95,7 +100,7 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
                         total_sum += s
                         total_count += c
                     to_process = []
-                    print(counter , time.time() - start)
+                    log.info(counter , time.time() - start)
                     start = time.time()
                     counter += 1
 
@@ -106,7 +111,7 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
 
     mean = total_sum / total_count
 
-    print(f"mean: {mean}")
+    log.info(f"mean: {mean}")
     counter = 0
     # === SECOND PASS: Compute std ===
     with db.begin() as txn:
@@ -123,7 +128,7 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
                     for s in list(executor.map(extract_squared_diff, to_process, itertools.repeat(mean))):
                         std_sum += s
                     to_process = []
-                    print(counter , time.time() - start)
+                    log.info(counter , time.time() - start)
                     counter += 1
 
             if to_process:
@@ -132,14 +137,81 @@ def compute_mean_std_2pass(lmdb_path, num_workers=16):
 
     std = np.sqrt(std_sum / total_count)
 
-    print(f"std: {std}")
+    log.info(f"std: {std}")
 
     return mean, std
+
+################################### Tif: ###########################################
+
+def welford_band_worker(file_path, log, band_index, max_val):
+    """Function that is called for each image and returns the calculated stats to be added to the full dataset stats.
+    Processes the image in smaller windows.
+    """
+    with rasterio.open(file_path) as src:
+        nodata = src.nodatavals[band_index - 1]
+        log.info(f"nodata: {nodata}")
+
+        w_band = Welford()
+
+        for _, window in src.block_windows(band_index):
+            band = src.read(band_index, window=window).astype(np.float64)
+
+            # --- filter out nodata ---
+            if nodata is not None:
+                mask = ~np.isclose(band, nodata)
+            else:
+                mask = np.ones(band.shape, dtype=bool)
+
+            mask &= ~np.isnan(band)
+            values = band[mask] / max_val
+
+            for elem in values:
+                w_band.add(elem) # one image in a subsample
+
+    return w_band
+
+def welford_1pass(log, tif_folder, band_index, num_workers=16, max_val = 255.0):
+    """Compute the mean and std in one pass using the Welford algorithm"""
+    files = list(glob.glob(os.path.join(tif_folder,"*.tif"))) + list(glob.glob(os.path.join(tif_folder,"*.tif")))
+    if not files:
+        raise ValueError("Could not find any tif files in the folder")
+
+    worker_fn = partial(welford_band_worker, log=log, band_index=band_index, max_val=max_val)
+
+    start = time.time()
+    total_w = welford_band_worker(files[0], log=log, band_index=band_index, max_val=max_val)
+    files = files[1:]
+
+
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        for img_result in list(executor.map(worker_fn, files)):
+            log.debug(f"type img_result: {type(img_result)}")
+            log.debug(f"var_p img_result: {img_result.var_p}")
+            log.debug(f"mean img_result: {img_result.mean}")
+            total_w.merge(img_result)
+
+
+    log.info(f"var_population: {total_w.var_p}")
+    log.info(f"mean: {total_w.mean}")
+    log.info(f"std: {np.sqrt(total_w.var_p)}")
+
+    log.info(f"Total time: {time.time() - start}")
+
+
 
 
 
 ###### Example to calculate mean and std from an lmdb file: ######
 # final_mean, final_std = compute_mean_std("train.lmdb")
+
+
+###### Example to calculate mean and std from a directory of tiff files: ######
+
+# log = func.config_logger("debug", "logs/welford_1pass.txt")
+# tif_folder = "PATH"
+# band_index = 5    # between 1 and the number of bands in the images
+# max_val = 65535.0 # float of max image value
+# welford_1pass(log, tif_folder, band_index, max_val=max_val)
 
 ###### Comparing different methods: ######
 # log_file = r"norm_calculation.txt"
