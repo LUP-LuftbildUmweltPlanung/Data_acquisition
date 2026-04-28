@@ -248,10 +248,7 @@ def process_historic(config, log, polygon, polygon_id, area, year, source_epsg_i
                 continue
 
             for elem in rgb_file_names:
-                ir_name = elem.replace("rgb", "ir")
-                ir_name = ir_name.replace("RGB", "IR")
-                ir_name = ir_name.replace(fr"/{rgb_base_folder}/D", fr"/{ir_base_folder}/D")
-                ir_name = ir_name.replace(fr"\{rgb_base_folder}\D", fr"\{ir_base_folder}\D")
+                ir_name = func.rgb_to_ir_path(elem, rgb_base_folder, ir_base_folder)
                 if ir_name in ir_file_names:
                     if final_ir_files != []:
                         final_ir_files.append(ir_name)

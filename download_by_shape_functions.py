@@ -104,7 +104,18 @@ def check_months_availability(log, bildflug_date, months):
     else:
         # fills up missing values with current date but if length of original encoded date is > 5,
         # at least the year and month should be set!
-        datetime_date = parser.parse(bildflug_date)
+        if "-" in bildflug_date or str(bildflug_date).isdigit():
+            try:
+                datetime_date = parser.parse(bildflug_date)
+            except Exception as e:
+                log.info(f"Unknown date format {bildflug_date} raises error: {e}")
+                return None
+        else:
+            try:
+                datetime_date = parser.parse(bildflug_date, dayfirst=True)
+            except Exception as e:
+                log.info(f"Unknown date format {bildflug_date} raises error: {e}")
+                return None
         if str(datetime_date.month) in months:
             log.debug(f"Date {bildflug_date} fits the requirements for months of acquisition {months}.")
             return bildflug_date
@@ -202,7 +213,7 @@ def get_acquisition_date(log, input_dict, retry_delays=[60, 600, 1800, 3600], mo
     return bildflug_date
 
 
-def config_logger(level, filename):
+def config_logger(level, filename, format = None):
     """Configuration of a logger"""
 
     if (level == "critical"):
@@ -224,7 +235,10 @@ def config_logger(level, filename):
 
     conf_handler = logging.FileHandler(filename, mode='w')
     conf_handler.setLevel(log_level)
-    conf_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    if format == "empty":
+        conf_formatter = logging.Formatter('%(message)s')
+    else:
+        conf_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     conf_handler.setFormatter(conf_formatter)
 
     conf_logger.addHandler(conf_handler)
@@ -513,6 +527,14 @@ def create_hist_file_list(input_folder, year, state, x_start, x_end, y_start, y_
                     file_names += new_file_names
 
     return file_names
+
+def rgb_to_ir_path(rgb_path, rgb_base_folder, ir_base_folder):
+    ir_name = rgb_path.replace("rgb", "ir")
+    ir_name = ir_name.replace("RGB", "IR")
+    ir_name = ir_name.replace(fr"/{rgb_base_folder}/D", fr"/{ir_base_folder}/D")
+    ir_name = ir_name.replace(fr"\{rgb_base_folder}\D", fr"\{ir_base_folder}\D")
+    ir_name = ir_name.replace(fr"\\{rgb_base_folder}\\D", fr"\\{ir_base_folder}\\D")
+    return ir_name
 
 
 def read_metadata_and_date(tif_path):
